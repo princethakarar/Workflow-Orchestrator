@@ -3,14 +3,18 @@ import { Task } from "../models/Task.js";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-
+import dotenv from "dotenv";
+import Groq from "groq-sdk";
+dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 
 // ── RAG service config ──────────────────────────────────────────────────────
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || "http://127.0.0.1:5001/rag";
-
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+});
 /**
  * validateLlmResponse
  * Basic schema validation for the AI response.
@@ -97,8 +101,6 @@ export const uploadAndProcessPdf = async (req, res, next) => {
         const dataBuffer = req.file.buffer;
         const query = req.body.prompt || "Generate modules, tasks, subtasks, priority, and dependencies";
         const model = req.body.model || "llama3.2";
-        const ollamaUrl = process.env.OLLAMA_URL || "http://127.0.0.1:11434/api/generate";
-
         // ── Step 1: RAG retrieval ──────────────────────────────────────────
         let ragResult;
         try {
@@ -230,6 +232,9 @@ OUTPUT FORMAT (strict JSON only)
     }
   ]
 }
+Return ONLY valid JSON.
+No explanation.
+No markdown.
 
 ${teamContextString}
 
@@ -239,79 +244,62 @@ ${ragContext}
 ${query ? "ADDITIONAL FOCUS:\n" + query : ""}
 `;
 
-        // ── Step 4: Call Ollama ───────────────────────────────────────────
-        const requestBody = {
-            model,
-            prompt: systemPrompt,
-            stream: false,
-            format: "json",
-        };
+// ── Step 4: Call Ollama ───────────────────────────────────────────
+    // ── Step 4: Call Groq ───────────────────────────────────────────
+const completion = await groq.chat.completions.create({
+  model: "llama3-70b-8192",
+  messages: [
+    {
+      role: "system",
+      content: systemPrompt,
+    },
+  ],
+  temperature: 0.2,
+});
 
-        const ollamaResponse = await fetch(ollamaUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(requestBody),
-        });
+const rawAiResponse = completion.choices[0].message.content;
 
-        if (!ollamaResponse.ok) {
-            const errorText = await ollamaResponse.text();
-            throw new Error(`Ollama API error: ${ollamaResponse.status} ${errorText}`);
-        }
+// ── Step 5: Validation & Parsing ────────────────────────────────
+let parsedJson = null;
 
-        const ollamaResult = await ollamaResponse.json();
-        const rawAiResponse = ollamaResult.response;
+try {
+  let cleanJson = rawAiResponse;
 
-        // ── Step 5: Validation & Logging ─────────────────────────────────
-        let parsedJson = null;
-        try {
-            // Attempt to extract JSON if LLM added markdown fluff
-            let cleanJson = rawAiResponse;
-            if (cleanJson.includes('```json')) cleanJson = cleanJson.split('```json')[1].split('```')[0];
-            else if (cleanJson.includes('```'))  cleanJson = cleanJson.split('```')[1].split('```')[0];
-            
-            parsedJson = JSON.parse(cleanJson.trim());
-        } catch (e) {
-            console.error("JSON Parse Error:", e.message);
-        }
+  if (cleanJson.includes('```json')) {
+    cleanJson = cleanJson.split('```json')[1].split('```')[0];
+  } else if (cleanJson.includes('```')) {
+    cleanJson = cleanJson.split('```')[1].split('```')[0];
+  }
 
-        const isValid = parsedJson ? validateLlmResponse(parsedJson) : false;
+  parsedJson = JSON.parse(cleanJson.trim());
+} catch (e) {
+  console.error("JSON Parse Error:", e.message);
+}
 
-        if (!isValid) {
-            return res.status(502).json({
-                success: false,
-                message: "The AI produced an invalid or incomplete JSON structure. Please try again with a clearer document.",
-                rawResponse: rawAiResponse
-            });
-        }
+const isValid = parsedJson ? validateLlmResponse(parsedJson) : false;
 
-        // Log successful generation to dataset
-        await logToDataset(ragContext, query, parsedJson);
+if (!isValid) {
+  return res.status(200).json({
+    success: true,
+    data: parsedJson,
+    aiResponse: rawAiResponse,
+    ragMeta: {
+        totalChunks: total_chunks,
+        retrievedChunks: chunks.length,
+        query,
+    },
+  });
+}
+  // ── Step 6: Log & Return ───────────────────────────────────────────
+  await logToDataset(ragContext, query, parsedJson);
 
-        return res.status(200).json({
-            success: true,
-            extractedTextSnippet: text_snippet,
-            ollamaResponse: rawAiResponse,
-            teamContext: teamData,
-            ragMeta: {
-                totalChunks: total_chunks,
-                retrievedChunks: chunks.length,
-                query,
-            },
-        });
-
-    } catch (error) {
-        if (
-            error.message &&
-            (error.message.includes("Ollama API error") ||
-                error.message.includes("fetch failed") ||
-                error.message.includes("ECONNREFUSED"))
-        ) {
-            return res.status(502).json({
-                success: false,
-                message: "Failed to communicate with local Ollama instance. Is Ollama running?",
-                error: error.message,
-            });
-        }
-        next(error);
-    }
+  return res.status(200).json({
+    success: true,
+    data: parsedJson,
+    chunks_retrieved: total_chunks,
+  });
+} catch (error) {
+  console.error("Processing error:", error);
+  next(error);
+}
 };
