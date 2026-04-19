@@ -1,0 +1,64 @@
+services:
+  # Backend Web Service
+  - type: web
+    name: workflow-orchestrator-backend
+    runtime: node
+    rootDir: Backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8000
+      - key: MONGO_URI
+        sync: false
+      - key: ACCESS_TOKEN_SECRET
+        sync: false
+      - key: ACCESS_TOKEN_EXPIRY
+        sync: false
+      - key: REFRESH_TOKEN_SECRET
+        sync: false
+      - key: REFRESH_TOKEN_EXPIRY
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_SECURE
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM_ADDRESS
+        sync: false
+      - key: FRONTEND_URL
+        value: https://workflow-orchestrator-frontend.onrender.com
+      # Keep CORS permissive; the app also uses FRONTEND_URL to allow the deployed frontend.
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_OWNER
+        value: princethakarar
+      - key: GITHUB_REPO
+        value: Workflow-Orchestrator
+      - key: GITHUB_WEBHOOK_SECRET
+        sync: false
+
+  # Frontend Static Site
+  - type: web
+    name: workflow-orchestrator-frontend
+    runtime: static
+    rootDir: Frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://workflow-orchestrator-backend.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+

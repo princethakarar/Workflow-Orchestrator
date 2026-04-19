@@ -1,0 +1,41 @@
+{
+  "name": "projectmanagement",
+  "version": "1.0.0",
+  "description": "project management application",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon --no-deprecation src/index.js",
+    "start": "node --no-deprecation src/index.js"
+  },
+  "keywords": [
+    "backend",
+    "node",
+    "API",
+    "Creation"
+  ],
+  "author": "prince",
+  "license": "ISC",
+  "devDependencies": {
+    "nodemon": "^3.1.11",
+    "prettier": "3.7.4"
+  },
+  "dependencies": {
+    "@octokit/rest": "^22.0.1",
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "express-validator": "^7.3.1",
+    "jsonwebtoken": "^9.0.3",
+    "mailgen": "^2.0.32",
+    "mongoose": "^9.1.2",
+    "multer": "^2.1.1",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.3",
+    "pdf-parse": "^2.4.5",
+    "winston": "^3.19.0"
+  }
+}

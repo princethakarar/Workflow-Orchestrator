@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="100" height="100" rx="22" fill="#07071c"/>
+
+  <!-- Ambient glow -->
+  <circle cx="50" cy="50" r="46" fill="#4338ca" opacity="0.08"/>
+
+  <!-- Edges -->
+  <line x1="28" y1="44" x2="50" y2="24" stroke="#6366f1" stroke-width="1.8" stroke-linecap="round" opacity="0.9"/>
+  <line x1="28" y1="56" x2="50" y2="76" stroke="#6366f1" stroke-width="1.8" stroke-linecap="round" opacity="0.9"/>
+  <line x1="56" y1="24" x2="72" y2="44" stroke="#818cf8" stroke-width="1.8" stroke-linecap="round" opacity="0.9"/>
+  <line x1="56" y1="76" x2="72" y2="56" stroke="#818cf8" stroke-width="1.8" stroke-linecap="round" opacity="0.9"/>
+
+  <!-- Node A -->
+  <circle cx="22" cy="50" r="12" fill="#0d0b2a" stroke="#6366f1" stroke-width="1.8"/>
+  <circle cx="22" cy="50" r="4.5" fill="#6366f1"/>
+
+  <!-- Node B -->
+  <circle cx="50" cy="18" r="10" fill="#0d0b2a" stroke="#6366f1" stroke-width="1.6"/>
+  <circle cx="50" cy="18" r="3.8" fill="#6366f1"/>
+
+  <!-- Node C -->
+  <circle cx="50" cy="82" r="10" fill="#0d0b2a" stroke="#6366f1" stroke-width="1.6"/>
+  <circle cx="50" cy="82" r="3.8" fill="#6366f1"/>
+
+  <!-- Node D (output) -->
+  <circle cx="76" cy="50" r="14" fill="#0f0a32" stroke="#9333ea" stroke-width="2.2" filter="url(#glow)"/>
+  <circle cx="76" cy="50" r="5.5" fill="#9333ea"/>
+</svg>
