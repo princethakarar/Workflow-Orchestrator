@@ -2,6 +2,7 @@ import React from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { CheckCircle2, Circle, X, Trash2 } from 'lucide-react';
 import { getAvatarColor, getInitials } from '../../utils/avatarUtils';
+import Avatar from '../common/Avatar';
 
 const SubtaskRow = ({
     subtask,
@@ -58,12 +59,13 @@ const SubtaskRow = ({
                     <div className="ml-4 flex items-center space-x-2">
                         {subtask.assignedTo.map((developer) => (
                             <div key={developer._id} className="relative group">
-                                <div
-                                    className={`w-8 h-8 ${getAvatarColor(developer._id || developer.id)} rounded-full flex items-center justify-center text-white text-xs font-semibold`}
+                                <Avatar
+                                    name={developer.fullName || developer.name}
+                                    imageUrl={developer.avatar}
+                                    seed={developer._id || developer.id}
+                                    size={32}
                                     title={developer.fullName || developer.name}
-                                >
-                                    {getInitials(developer.fullName || developer.name)}
-                                </div>
+                                />
                                 {canEdit && (
                                     <button
                                         onClick={() => onUnassignDeveloper(developer._id)}

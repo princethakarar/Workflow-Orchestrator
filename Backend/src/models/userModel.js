@@ -11,7 +11,7 @@ const userSchema = new Schema(
                 localPath: String
             },
             default: {
-                url: `https://placehold.co/200x200`,
+                url: "",
                 localPath: ""
             }
         },

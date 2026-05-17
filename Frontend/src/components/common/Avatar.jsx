@@ -32,6 +32,14 @@ function resolveUrl(url) {
   if (!url) return null;
   if (typeof url !== 'string') return null;
   if (!url.trim()) return null;
+  // Reject known placeholder / dummy avatar URLs
+  const lower = url.toLowerCase();
+  if (
+    lower.includes('placehold') ||
+    lower.includes('placeholder') ||
+    lower.includes('ui-avatars.com') ||
+    /\b\d+x\d+\b/.test(lower)
+  ) return null;
   if (url.startsWith('blob:') || url.startsWith('data:')) return url;
   if (url.startsWith('http')) return url;
   if (url.startsWith('/')) return `${BACKEND}${url}`;

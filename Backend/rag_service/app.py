@@ -1,3 +1,8 @@
+import os
+# Fix HuggingFace DNS issues (Errno 11001) by using the official mirror
+# THIS MUST BE BEFORE IMPORTS
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import fitz          # PyMuPDF
@@ -6,7 +11,6 @@ from sentence_transformers import SentenceTransformer, CrossEncoder
 import hashlib
 import re
 import logging
-import os
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(

@@ -119,46 +119,31 @@ const Projects = () => {
         if (!manager?.avatar) return null;
         const av = manager.avatar;
         const url = av?.url || (typeof av === 'string' && av ? av : null);
-        if (!url) return null;
+        if (!url || !url.trim()) return null;
+        // Reject placeholder / dummy URLs
+        const lower = url.toLowerCase();
+        if (lower.includes('placehold') || lower.includes('placeholder') || /\b\d+x\d+\b/.test(lower)) return null;
         const base = API_BASE_URL.replace(/\/$/, '');
         return url.startsWith('http') ? url : `${base}${url}`;
     };
 
     const getPriorityStyle = (priority) => {
-        if (isDark) {
-            switch (priority) {
-                case 'critical': return { background: 'rgba(239,68,68,0.15)',   color: '#f87171', borderColor: 'rgba(239,68,68,0.3)' };
-                case 'high':     return { background: 'rgba(249,115,22,0.15)',  color: '#fb923c', borderColor: 'rgba(249,115,22,0.3)' };
-                case 'medium':   return { background: 'rgba(99,102,241,0.15)',  color: '#a5b4fc', borderColor: 'rgba(99,102,241,0.3)' };
-                case 'low':      return { background: 'rgba(100,116,139,0.15)', color: '#94a3b8', borderColor: 'rgba(100,116,139,0.3)' };
-                default:         return { background: 'rgba(100,116,139,0.15)', color: '#94a3b8', borderColor: 'rgba(100,116,139,0.3)' };
-            }
-        }
         switch (priority) {
-            case 'critical': return { background: '#fee2e2', color: '#b91c1c', borderColor: '#fca5a5' };
-            case 'high':     return { background: '#ffedd5', color: '#c2410c', borderColor: '#fdba74' };
-            case 'medium':   return { background: '#e0e7ff', color: '#4338ca', borderColor: '#a5b4fc' };
-            case 'low':      return { background: '#f1f5f9', color: '#475569', borderColor: '#cbd5e1' };
-            default:         return { background: '#f1f5f9', color: '#475569', borderColor: '#cbd5e1' };
+            case 'critical': return { background: 'var(--bg-red-subtle)',     color: 'var(--text-red)',     borderColor: 'var(--border-red)' };
+            case 'high':     return { background: 'var(--bg-amber-subtle)',   color: 'var(--text-amber)',   borderColor: 'var(--border-amber)' };
+            case 'medium':   return { background: 'var(--bg-blue-subtle)',    color: 'var(--text-blue)',    borderColor: 'var(--border-blue)' };
+            case 'low':      return { background: 'var(--bg-muted)',          color: 'var(--text-secondary)', borderColor: 'var(--border)' };
+            default:         return { background: 'var(--bg-muted)',          color: 'var(--text-secondary)', borderColor: 'var(--border)' };
         }
     };
 
     const getStatusStyle = (status) => {
-        if (isDark) {
-            switch (status) {
-                case 'active':    return { background: 'rgba(34,197,94,0.15)',   color: '#4ade80' };
-                case 'completed': return { background: 'rgba(99,102,241,0.15)',  color: '#a5b4fc' };
-                case 'onHold':    return { background: 'rgba(234,179,8,0.15)',   color: '#fde047' };
-                case 'cancelled': return { background: 'rgba(239,68,68,0.15)',   color: '#f87171' };
-                default:          return { background: 'rgba(100,116,139,0.15)', color: '#94a3b8' };
-            }
-        }
         switch (status) {
-            case 'active':    return { background: '#dcfce7', color: '#15803d' };
-            case 'completed': return { background: '#e0e7ff', color: '#4338ca' };
-            case 'onHold':    return { background: '#fef9c3', color: '#a16207' };
-            case 'cancelled': return { background: '#fee2e2', color: '#b91c1c' };
-            default:          return { background: '#f1f5f9', color: '#475569' };
+            case 'active':    return { background: 'var(--bg-emerald-subtle)', color: 'var(--text-emerald)' };
+            case 'completed': return { background: 'var(--bg-blue-subtle)',    color: 'var(--text-blue)' };
+            case 'onHold':    return { background: 'var(--bg-amber-subtle)',   color: 'var(--text-amber)' };
+            case 'cancelled': return { background: 'var(--bg-red-subtle)',     color: 'var(--text-red)' };
+            default:          return { background: 'var(--bg-muted)',          color: 'var(--text-secondary)' };
         }
     };
 

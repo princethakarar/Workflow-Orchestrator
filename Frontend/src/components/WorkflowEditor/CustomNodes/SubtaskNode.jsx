@@ -22,21 +22,21 @@ const SubtaskNode = ({ id, data }) => {
                 return {
                     ...base,
                     background: 'var(--bg-emerald-subtle)',
-                    borderColor: '#10b981',
+                    borderColor: 'var(--text-emerald)',
                     boxShadow: isHovered ? '0 0 20px rgba(16,185,129,0.4)' : '0 4px 12px rgba(16,185,129,0.15)'
                 }
             case 'in-progress':
                 return {
                     ...base,
                     background: 'var(--bg-blue-subtle)',
-                    borderColor: '#3b82f6',
+                    borderColor: 'var(--text-blue)',
                     boxShadow: isHovered ? '0 0 20px rgba(59,130,246,0.4)' : '0 4px 12px rgba(59,130,246,0.15)'
                 }
             default:
                 return {
                     ...base,
                     background: 'var(--bg-card)',
-                    borderColor: isHovered ? 'var(--primary)' : 'var(--border)',
+                    borderColor: isHovered ? 'var(--primary-500)' : 'var(--border)',
                     boxShadow: isHovered ? '0 0 20px rgba(99,102,241,0.25)' : '0 4px 12px rgba(0,0,0,0.1)'
                 }
         }
@@ -45,9 +45,9 @@ const SubtaskNode = ({ id, data }) => {
     const getStatusIcon = () => {
         switch (status) {
             case 'done':
-                return <CheckCircle2 className="w-4 h-4 shrink-0 transition-colors" style={{ color: '#10b981' }} />
+                return <CheckCircle2 className="w-4 h-4 shrink-0 transition-colors" style={{ color: 'var(--text-emerald)' }} />
             case 'in-progress':
-                return <Clock className="w-4 h-4 shrink-0 animate-pulse transition-colors" style={{ color: '#3b82f6' }} />
+                return <Clock className="w-4 h-4 shrink-0 animate-pulse transition-colors" style={{ color: 'var(--text-blue)' }} />
             default:
                 return <Circle className="w-4 h-4 shrink-0 transition-colors" style={{ color: 'var(--text-muted)' }} />
         }
@@ -56,9 +56,9 @@ const SubtaskNode = ({ id, data }) => {
     const getBadgeStyle = () => {
         switch (status) {
             case 'done':
-                return { bg: 'var(--bg-emerald-subtle)', text: '#10b981', label: 'DONE' }
+                return { bg: 'var(--bg-emerald-subtle)', text: 'var(--text-emerald)', label: 'DONE' }
             case 'in-progress':
-                return { bg: 'var(--bg-blue-subtle)', text: '#3b82f6', label: 'IN PROGRESS' }
+                return { bg: 'var(--bg-blue-subtle)', text: 'var(--text-blue)', label: 'IN PROGRESS' }
             default:
                 return { bg: 'var(--bg-muted)', text: 'var(--text-secondary)', label: 'TO DO' }
         }
@@ -68,7 +68,7 @@ const SubtaskNode = ({ id, data }) => {
         switch (taskPriority) {
             case 'high': return 'text-red-500'
             case 'medium': return 'text-amber-500'
-            default: return 'text-gray-400'
+            default: return 'text-slate-400'
         }
     }
 

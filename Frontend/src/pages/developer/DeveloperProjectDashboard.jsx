@@ -395,18 +395,16 @@ const DeveloperProjectDashboard = () => {
                               <span className="text-xs mr-2" style={{ color: 'var(--text-secondary)' }}>Assigned to:</span>
                               {task.assignedTo.map(dev => {
                                 const devId = dev._id || dev.id;
-                                const colorClass = getAvatarColor(devId);
-                                const initials = getInitials(dev.fullName || dev.name);
                                 
                                 return (
                                   <div key={devId} className="flex items-center">
-                                    <div
-                                      className={`w-7 h-7 ${colorClass} rounded-full flex items-center justify-center text-white text-xs font-semibold mr-2`}
-                                      title={dev.fullName || dev.name}
-                                    >
-                                      {initials}
-                                    </div>
-                                    <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                                    <Avatar
+                                      name={dev.fullName || dev.name}
+                                      imageUrl={dev.avatar}
+                                      seed={devId}
+                                      size={28}
+                                    />
+                                    <span className="text-sm ml-2" style={{ color: 'var(--text-secondary)' }}>
                                       {dev.fullName || dev.name}
                                     </span>
                                   </div>
@@ -491,9 +489,12 @@ const DeveloperProjectDashboard = () => {
                                       
                                       return assignedToUser && (
                                         <div className="ml-4 flex items-center">
-                                          <div className={`w-6 h-6 ${getAvatarColor(assignedToUser._id)} rounded-full flex items-center justify-center text-white text-xs font-semibold mr-2`}>
-                                            {getInitials(assignedToUser.fullName || assignedToUser.name)}
-                                          </div>
+                                          <Avatar
+                                            name={assignedToUser.fullName || assignedToUser.name}
+                                            imageUrl={assignedToUser.avatar}
+                                            seed={assignedToUser._id}
+                                            size={24}
+                                          />
                                           <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                                             {assignedToUser.fullName || assignedToUser.name}
                                             {assignedToUser._id === currentUserId && (

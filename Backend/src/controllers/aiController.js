@@ -247,7 +247,7 @@ ${query ? "ADDITIONAL FOCUS:\n" + query : ""}
 // ── Step 4: Call Ollama ───────────────────────────────────────────
     // ── Step 4: Call Groq ───────────────────────────────────────────
 const completion = await groq.chat.completions.create({
-  model: "llama3-70b-8192",
+  model: "llama-3.3-70b-versatile",
   messages: [
     {
       role: "system",

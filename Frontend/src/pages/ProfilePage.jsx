@@ -30,7 +30,10 @@ const getAvatarSrc = (avatar) => {
     if (!avatar) return null;
     // Avatar stored as object { url: "..." }
     const url = avatar?.url || (typeof avatar === 'string' ? avatar : null);
-    if (!url) return null;
+    if (!url || !url.trim()) return null;
+    // Reject placeholder / dummy URLs
+    const lower = url.toLowerCase();
+    if (lower.includes('placehold') || lower.includes('placeholder') || /\b\d+x\d+\b/.test(lower)) return null;
     if (url.startsWith('http')) return url;
     return `${BACKEND}${url}`;
 };
@@ -44,58 +47,46 @@ const fmtDate = (dateStr) => {
 
 // ─── Role badge map ─────────────────────────────────────────────────────────────
 const ROLE_BADGE = {
-    developer:      { label: 'DEVELOPER',       bg: '#F0FDF4', border: '#86EFAC', color: '#16A34A' },
-    admin:          { label: 'ADMIN',            bg: '#FEF3C7', border: '#FCD34D', color: '#B45309' },
-    projectManager: { label: 'PROJECT MANAGER',  bg: '#EEF2FF', border: '#A5B4FC', color: '#4338CA' },
-};
-
-const ROLE_BADGE_DARK = {
-    developer:      { label: 'DEVELOPER',       bg: 'rgba(22,163,74,0.15)',  border: '#16A34A', color: '#4ade80' },
-    admin:          { label: 'ADMIN',            bg: 'rgba(180,83,9,0.15)',   border: '#F59E0B', color: '#FCD34D' },
-    projectManager: { label: 'PROJECT MANAGER',  bg: 'rgba(99,102,241,0.18)', border: '#6366f1', color: '#818cf8' },
+    developer:      { label: 'DEVELOPER',       bg: 'var(--badge-dev-bg)', border: 'var(--border-indigo)', color: 'var(--badge-dev-fg)' },
+    admin:          { label: 'ADMIN',            bg: 'var(--bg-amber-subtle)', border: 'var(--border-amber)', color: 'var(--text-amber)' },
+    projectManager: { label: 'PROJECT MANAGER',  bg: 'var(--bg-blue-subtle)', border: 'var(--border-blue)', color: 'var(--text-blue)' },
 };
 
 // ─── Project badge colours ─────────────────────────────────────────────────────
 const PROJ_COLORS = [
-    { bg: '#EEF2FF', border: '#C7D2FE', text: '#4F46E5', icon: '#' },
-    { bg: '#F5F3FF', border: '#DDD6FE', text: '#7C3AED', icon: '✳' },
-    { bg: '#F0FDF4', border: '#86EFAC', text: '#16A34A', icon: '◆' },
-    { bg: '#FFF7ED', border: '#FED7AA', text: '#EA580C', icon: '●' },
-];
-const PROJ_COLORS_DARK = [
-    { bg: 'rgba(99,102,241,0.13)',  border: '#6366f1', text: '#818cf8', icon: '#' },
-    { bg: 'rgba(124,58,237,0.13)', border: '#7C3AED', text: '#A78BFA', icon: '✳' },
-    { bg: 'rgba(22,163,74,0.12)',  border: '#16A34A', text: '#4ade80', icon: '◆' },
-    { bg: 'rgba(234,88,12,0.12)',  border: '#EA580C', text: '#FB923C', icon: '●' },
+    { bg: 'var(--bg-blue-subtle)', border: 'var(--border-blue)', text: 'var(--text-blue)', icon: '#' },
+    { bg: 'var(--bg-emerald-subtle)', border: 'var(--border-emerald)', text: 'var(--text-emerald)', icon: '✳' },
+    { bg: 'var(--bg-red-subtle)', border: 'var(--border-red)', text: 'var(--text-red)', icon: '◆' },
+    { bg: 'var(--bg-amber-subtle)', border: 'var(--border-amber)', text: 'var(--text-amber)', icon: '●' },
 ];
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const tok = (dark) => ({
-    bg:           dark ? '#0B0F19'  : '#F1F4F8',
-    cardBg:       dark ? '#1E293B'  : '#FFFFFF',
-    cardBorder:   dark ? '#2D3748'  : '#E8ECF0',
-    cardShadow:   dark ? '0 1px 6px rgba(0,0,0,0.3)' : '0 1px 4px rgba(0,0,0,0.05)',
+    bg:           'var(--bg-page)',
+    cardBg:       'var(--bg-card)',
+    cardBorder:   'var(--border)',
+    cardShadow:   'var(--shadow-card)',
     r:            '14px',
-    textPrimary:  dark ? '#F1F5F9'  : '#0F172A',
-    textSec:      dark ? '#94A3B8'  : '#64748B',
-    textLabel:    dark ? '#64748B'  : '#94A3B8',
-    accent:       dark ? '#6366f1'  : '#4F46E5',
-    inputBg:      dark ? '#0F172A'  : '#F8FAFC',
-    inputBorder:  dark ? '#334155'  : '#E2E8F0',
-    border:       dark ? '#2D3748'  : '#E2E8F0',
-    divider:      dark ? '#1f2937'  : '#F1F5F9',
-    footerBg:     dark ? '#0B0F19'  : '#F1F4F8',
-    footerText:   dark ? '#334155'  : '#94A3B8',
-    footerBorder: dark ? '#1f2937'  : '#E8ECF0',
-    avatarRing:   dark ? '#6366f1'  : '#C7D2FE',
-    projColors:   dark ? PROJ_COLORS_DARK : PROJ_COLORS,
-    roleMap:      dark ? ROLE_BADGE_DARK  : ROLE_BADGE,
+    textPrimary:  'var(--text-primary)',
+    textSec:      'var(--text-secondary)',
+    textLabel:    'var(--text-muted)',
+    accent:       'var(--primary-500)',
+    inputBg:      'var(--bg-muted)',
+    inputBorder:  'var(--border)',
+    border:       'var(--border)',
+    divider:      'var(--border-muted)',
+    footerBg:     'var(--bg-page)',
+    footerText:   'var(--text-muted)',
+    footerBorder: 'var(--border-muted)',
+    avatarRing:   'var(--border-indigo)',
+    projColors:   PROJ_COLORS,
+    roleMap:      ROLE_BADGE,
 });
 
 // ══════════════════════════════════════════════════════
 //  CHANGE PASSWORD MODAL
 // ══════════════════════════════════════════════════════
-const ChangePasswordModal = ({ onClose, t }) => {
+const ChangePasswordModal = ({ onClose, t, isDark }) => {
     const [step, setStep]       = useState('confirm');
     const [oldPwd, setOldPwd]   = useState('');
     const [newPwd, setNewPwd]   = useState('');
@@ -117,17 +108,19 @@ const ChangePasswordModal = ({ onClose, t }) => {
         width: '100%', height: '48px', boxSizing: 'border-box',
         borderRadius: '8px', padding: '0 44px 0 14px',
         fontFamily: F, fontSize: '14px',
-        background: '#F8FAFC', border: '1px solid #E2E8F0',
-        color: '#0F172A', outline: 'none',
+        background: isDark ? '#1e293b' : '#F8FAFC',
+        border: `1px solid ${isDark ? '#334155' : '#E2E8F0'}`,
+        color: isDark ? '#f1f5f9' : '#0F172A', outline: 'none',
     };
     const lbl = {
         fontFamily: F, fontSize: '11px', fontWeight: 600,
         textTransform: 'uppercase', letterSpacing: '0.06em',
-        color: '#94A3B8', display: 'block', marginBottom: '6px',
+        color: isDark ? '#6b7280' : '#94A3B8', display: 'block', marginBottom: '6px',
     };
     const eyeBtn = {
         position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-        background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8',
+        background: 'none', border: 'none', cursor: 'pointer',
+        color: isDark ? '#6b7280' : '#94A3B8',
         display: 'flex', alignItems: 'center',
     };
 
@@ -150,7 +143,7 @@ const ChangePasswordModal = ({ onClose, t }) => {
             style={{
                 position: 'fixed', inset: 0, zIndex: 9999,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'rgba(0,0,0,0.45)',
+                background: isDark ? 'rgba(0,0,0,0.65)' : 'rgba(0,0,0,0.45)',
                 backdropFilter: 'blur(6px)',
                 WebkitBackdropFilter: 'blur(6px)',
             }}
@@ -162,33 +155,34 @@ const ChangePasswordModal = ({ onClose, t }) => {
                 exit={{    scale: 0.94, y: 18, opacity: 0 }}
                 transition={{ duration: 0.22, ease: 'easeOut' }}
                 style={{
-                    background: '#FFFFFF', borderRadius: '16px', padding: '36px',
+                    background: isDark ? '#111827' : '#FFFFFF',
+                    borderRadius: '16px', padding: '36px',
                     width: '100%', maxWidth: '520px', boxSizing: 'border-box',
-                    border: '1px solid #E2E8F0',
-                    boxShadow: '0 24px 64px rgba(0,0,0,0.18)',
+                    border: `1px solid ${isDark ? '#1f2937' : '#E2E8F0'}`,
+                    boxShadow: isDark ? '0 24px 64px rgba(0,0,0,0.5)' : '0 24px 64px rgba(0,0,0,0.18)',
                     position: 'relative',
                 }}>
 
                 {/* Close */}
-                <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', display: 'flex' }}>
+                <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: isDark ? '#6b7280' : '#94A3B8', display: 'flex' }}>
                     <X size={18}/>
                 </button>
 
                 {/* ── Step: confirm ── */}
                 {step === 'confirm' && <>
-                    <h3 style={{ fontFamily: F, fontSize: '22px', fontWeight: 700, color: '#0F172A', margin: '0 0 10px' }}>Change Password</h3>
-                    <p style={{ fontFamily: F, fontSize: '14px', color: '#64748B', margin: '0 0 28px' }}>
+                    <h3 style={{ fontFamily: F, fontSize: '22px', fontWeight: 700, color: isDark ? '#f1f5f9' : '#0F172A', margin: '0 0 10px' }}>Change Password</h3>
+                    <p style={{ fontFamily: F, fontSize: '14px', color: isDark ? '#94a3b8' : '#64748B', margin: '0 0 28px' }}>
                         Are you sure you want to change your password? You'll need your current password to proceed.
                     </p>
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                        <ModalBtn label="Cancel"   variant="outline" onClick={onClose}/>
-                        <ModalBtn label="Continue" variant="filled"  onClick={() => setStep('form')}/>
+                        <ModalBtn label="Cancel"   variant="outline" onClick={onClose} isDark={isDark}/>
+                        <ModalBtn label="Continue" variant="filled"  onClick={() => setStep('form')} isDark={isDark}/>
                     </div>
                 </>}
 
                 {/* ── Step: form ── */}
                 {step === 'form' && <>
-                    <h3 style={{ fontFamily: F, fontSize: '22px', fontWeight: 700, color: '#0F172A', margin: '0 0 24px' }}>Enter New Password</h3>
+                    <h3 style={{ fontFamily: F, fontSize: '22px', fontWeight: 700, color: isDark ? '#f1f5f9' : '#0F172A', margin: '0 0 24px' }}>Enter New Password</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 16 }}>
 
                         {/* Current Password */}
@@ -248,19 +242,20 @@ const ChangePasswordModal = ({ onClose, t }) => {
 
                     {/* Error */}
                     {err && (
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.09)', border: '1px solid rgba(239,68,68,0.2)', marginBottom: 14 }}>
-                            <AlertCircle size={13} color="#ef4444"/>
-                            <span style={{ fontFamily: F, fontSize: 13, color: '#ef4444' }}>{err}</span>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '10px 14px', borderRadius: 8, background: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.09)', border: `1px solid ${isDark ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.2)'}`, marginBottom: 14 }}>
+                            <AlertCircle size={13} color={isDark ? '#f87171' : '#ef4444'}/>
+                            <span style={{ fontFamily: F, fontSize: 13, color: isDark ? '#f87171' : '#ef4444' }}>{err}</span>
                         </div>
                     )}
 
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                        <ModalBtn label="Back" variant="outline" onClick={() => { setStep('confirm'); setErr(''); }}/>
+                        <ModalBtn label="Back" variant="outline" onClick={() => { setStep('confirm'); setErr(''); }} isDark={isDark}/>
                         <ModalBtn
                             label={loading ? 'Saving…' : 'Save Password'}
                             variant="filled"
                             onClick={handleSave}
                             disabled={loading}
+                            isDark={isDark}
                             icon={loading ? <Loader2 size={14} style={{ animation: 'spin .7s linear infinite' }}/> : null}
                         />
                     </div>
@@ -270,12 +265,12 @@ const ChangePasswordModal = ({ onClose, t }) => {
                 {step === 'done' && (
                     <div style={{ textAlign: 'center', padding: '12px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
                         {/* Success check */}
-                        <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                        <div style={{ width: 48, height: 48, borderRadius: '50%', background: isDark ? 'rgba(34,197,94,0.15)' : '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
                             <CheckCircle2 size={24} color="#22c55e"/>
                         </div>
-                        <h3 style={{ fontFamily: F, fontSize: '20px', fontWeight: 700, color: '#0F172A', margin: '0 0 8px' }}>Password Updated</h3>
-                        <p style={{ fontFamily: F, fontSize: '14px', color: '#64748B', margin: '0 0 24px' }}>Your password has been changed successfully.</p>
-                        <ModalBtn label="Done" variant="filled" onClick={onClose}/>
+                        <h3 style={{ fontFamily: F, fontSize: '20px', fontWeight: 700, color: isDark ? '#f1f5f9' : '#0F172A', margin: '0 0 8px' }}>Password Updated</h3>
+                        <p style={{ fontFamily: F, fontSize: '14px', color: isDark ? '#94a3b8' : '#64748B', margin: '0 0 24px' }}>Your password has been changed successfully.</p>
+                        <ModalBtn label="Done" variant="filled" onClick={onClose} isDark={isDark}/>
                     </div>
                 )}
             </motion.div>
@@ -302,17 +297,17 @@ const Btn = ({ label, variant, t, onClick, disabled, icon }) => (
     </motion.button>
 );
 
-// ── Modal button (fixed light colours — modal bg is always white) ──────────────
-const ModalBtn = ({ label, variant, onClick, disabled, icon }) => (
+// ── Modal button (theme-aware) ──────────────────────────────────────────────────
+const ModalBtn = ({ label, variant, onClick, disabled, icon, isDark }) => (
     <motion.button whileTap={{ scale: 0.97 }} onClick={onClick} disabled={disabled}
         style={{
             display: 'flex', alignItems: 'center', gap: 6,
             height: 40, padding: '0 18px', borderRadius: 8, cursor: disabled ? 'not-allowed' : 'pointer',
             fontFamily: F, fontSize: 14, fontWeight: variant === 'filled' ? 600 : 500,
             opacity: disabled ? 0.65 : 1,
-            background: variant === 'filled' ? '#4F46E5' : '#FFFFFF',
-            border:     variant === 'filled' ? 'none' : '1px solid #E2E8F0',
-            color:      variant === 'filled' ? '#fff' : '#374151',
+            background: variant === 'filled' ? '#4F46E5' : (isDark ? '#1e293b' : '#FFFFFF'),
+            border:     variant === 'filled' ? 'none' : `1px solid ${isDark ? '#334155' : '#E2E8F0'}`,
+            color:      variant === 'filled' ? '#fff' : (isDark ? '#d1d5db' : '#374151'),
         }}>
         {icon}{label}
     </motion.button>
@@ -655,7 +650,7 @@ export default function ProfilePage() {
 
             {/* Change Password Modal */}
             <AnimatePresence>
-                {showPwd && <ChangePasswordModal onClose={() => setShowPwd(false)} t={t}/>}
+                {showPwd && <ChangePasswordModal onClose={() => setShowPwd(false)} t={t} isDark={isDark}/>}
             </AnimatePresence>
 
             {/* Responsive + keyframe styles */}

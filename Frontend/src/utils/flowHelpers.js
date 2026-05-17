@@ -36,7 +36,7 @@ export const createDeveloperNode = (developerData, position) => {
             userId: developerData._id || developerData.userId,
             label: developerData.fullName || developerData.username || 'Developer',
             role: developerData.role || 'developer',
-            avatar: developerData.avatar?.url || developerData.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(developerData.fullName || developerData.username)}&background=random`,
+            avatar: developerData.avatar?.url || developerData.avatar || null,
             username: developerData.username,
             email: developerData.email
         }

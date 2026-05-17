@@ -126,8 +126,8 @@ const PriorityBadge = ({ priority }) => {
             display: 'inline-flex', alignItems: 'center', gap: '5px',
             padding: '3px 10px', borderRadius: '20px', whiteSpace: 'nowrap',
             fontFamily: F, fontSize: '11.5px', fontWeight: 600,
-            background: isHigh ? 'rgba(239,68,68,0.1)' : isMed ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)',
-            color: isHigh ? '#ef4444' : isMed ? '#f59e0b' : '#10b981',
+            background: isHigh ? 'var(--bg-red-subtle)' : isMed ? 'var(--bg-amber-subtle)' : 'var(--bg-emerald-subtle)',
+            color: isHigh ? 'var(--text-red)' : isMed ? 'var(--text-amber)' : 'var(--text-emerald)',
             textTransform: 'capitalize'
         }}>
             {priority || '—'}

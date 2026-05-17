@@ -14,21 +14,26 @@ const DeveloperCard = ({ developer, draggable = false }) => {
         opacity: isDragging ? 0.5 : 1,
     };
 
-    const specializationColors = {
-        'Frontend': 'bg-blue-100 text-blue-800',
-        'Backend': 'bg-green-100 text-green-800',
-        'Full Stack': 'bg-purple-100 text-purple-800',
-        'DevOps': 'bg-orange-100 text-orange-800',
-        'QA': 'bg-pink-100 text-pink-800',
-        'UI/UX': 'bg-indigo-100 text-indigo-800'
+    const getSpecializationStyle = (spec) => {
+        switch (spec) {
+            case 'Frontend':   return { background: 'var(--bg-blue-subtle)',    color: 'var(--text-blue)' };
+            case 'Backend':    return { background: 'var(--bg-emerald-subtle)', color: 'var(--text-emerald)' };
+            case 'Full Stack': return { background: 'var(--badge-dev-bg)',      color: 'var(--badge-dev-fg)' };
+            case 'DevOps':     return { background: 'var(--bg-amber-subtle)',   color: 'var(--text-amber)' };
+            case 'QA':         return { background: 'var(--bg-red-subtle)',     color: 'var(--text-red)' };
+            case 'UI/UX':      return { background: 'var(--bg-blue-subtle)',    color: 'var(--text-indigo)' };
+            default:           return { background: 'var(--bg-muted)',          color: 'var(--text-secondary)' };
+        }
     };
+
+    const specStyle = getSpecializationStyle(developer.specialization);
 
     return (
         <div
             ref={setNodeRef}
             style={{
                 ...style,
-                background: 'var(--bg-hover)',
+                background: 'var(--bg-card)',
                 borderColor: 'var(--border)',
             }}
             {...(draggable ? listeners : {})}
@@ -53,12 +58,14 @@ const DeveloperCard = ({ developer, draggable = false }) => {
                 seed={developer._id || developer.id || developer.email || developer.username}
                 size={40}
             />
-            <div className="flex-1">
-                <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{developer.fullName}</p>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{developer.email}</p>
+            <div className="flex-1 min-w-0">
+                <p className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>{developer.fullName}</p>
+                <p className="text-sm truncate" style={{ color: 'var(--text-muted)' }}>{developer.email}</p>
             </div>
-            <span className={`px-2 py-1 text-xs font-semibold rounded ${specializationColors[developer.specialization] || 'bg-gray-100 text-gray-800'
-                }`}>
+            <span 
+                className="px-2 py-1 text-[10px] font-bold rounded uppercase tracking-wider whitespace-nowrap"
+                style={{ background: specStyle.background, color: specStyle.color }}
+            >
                 {developer.specialization}
             </span>
         </div>

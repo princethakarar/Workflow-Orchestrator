@@ -12,6 +12,7 @@ import {
 import SubtaskRow from './SubtaskRow';
 import { useDroppable } from '@dnd-kit/core';
 import { getAvatarColor, getInitials } from '../../utils/avatarUtils';
+import Avatar from '../common/Avatar';
 
 const TaskCard = ({
     task,
@@ -124,12 +125,12 @@ const TaskCard = ({
                                     <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Assigned:</span>
                                     {task.assignedTo.map((developer) => (
                                         <div key={developer._id} className="relative group flex items-center">
-                                            <div
-                                                className={`w-7 h-7 ${getAvatarColor(developer._id || developer.id)} rounded-full flex items-center justify-center text-white text-xs font-semibold`}
-                                                title={developer.fullName || developer.name}
-                                            >
-                                                {getInitials(developer.fullName || developer.name)}
-                                            </div>
+                                            <Avatar
+                                                name={developer.fullName || developer.name}
+                                                imageUrl={developer.avatar}
+                                                seed={developer._id || developer.id}
+                                                size={28}
+                                            />
                                             <span className="ml-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
                                                 {developer.fullName || developer.name}
                                             </span>

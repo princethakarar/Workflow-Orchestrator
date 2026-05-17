@@ -59,7 +59,7 @@ const AdminLayout = () => {
     { icon: LayoutDashboard, label: "Dashboard", path: "/admin/dashboard" },
     { icon: Folder, label: "All Projects", path: "/admin/projects" },
     { icon: Users, label: "Team Management", path: "/admin/team" },
-    { icon: FileText, label: "AI PDF Analyzer", path: "/admin/ai-analyzer" },
+    { icon: FileText, label: "AI Task Generator", path: "/admin/ai-analyzer" },
   ];
 
   const sidebarStyle = {
