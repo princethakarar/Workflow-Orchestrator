@@ -4,10 +4,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useWorkflow } from '../hooks/useWorkflow'
 import WorkflowEditor from '../components/WorkflowEditor'
 import { toast } from 'react-toastify'
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import WorkflowLoader from '../components/common/WorkflowLoader'
 import useMinLoader from '../hooks/useMinLoader'
+import { useAuth } from '../context/AuthContext'
+import { useSocket } from '../hooks/useSocket'
 
 /**
  * WorkflowEditorPage
@@ -18,6 +20,8 @@ const WorkflowEditorPage = () => {
     const { projectId } = useParams()
     const navigate = useNavigate()
     const { isDark, toggle } = useTheme()
+    const { user } = useAuth()
+    const { on, off, isConnected, socket } = useSocket(projectId)
 
     const {
         project,
@@ -26,8 +30,28 @@ const WorkflowEditorPage = () => {
         availableSubtasks,
         canEdit,
         loading,
-        error
+        error,
+        refetch,
+        silentRefetch
     } = useWorkflow(projectId)
+
+    // Handle real-time updates — only attach when socket is actually connected
+    useEffect(() => {
+        if (!isConnected) return
+
+        const handleWorkflowUpdate = () => {
+            // The backend already excludes the sender's socket via except(),
+            // so any event we receive here is definitely from another tab/user.
+            console.log('[WorkflowSync] Received workflow-updated — syncing');
+            silentRefetch();
+        };
+
+        on('workflow-updated', handleWorkflowUpdate);
+
+        return () => {
+            off('workflow-updated', handleWorkflowUpdate);
+        };
+    }, [isConnected, on, off, silentRefetch]);
 
     // Handle auth errors
     useEffect(() => {
@@ -142,6 +166,7 @@ const WorkflowEditorPage = () => {
                     initialEdges={edges}
                     initialSubtasks={availableSubtasks}
                     canEdit={canEdit}
+                    socketId={socket?.id}
                 />
             </div>
         </div>
