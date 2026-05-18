@@ -72,19 +72,7 @@ const Login = () => {
       subtitle="Sign in to continue to your workflow"
       footer={
         <div className="space-y-4">
-          <div className={`text-sm ${isDark ? 'text-slate-500' : 'text-gray-500'}`}>
-            Don't have an account?{' '}
-            <Link
-              to="/register"
-              className={`font-semibold transition-colors relative after:content-[''] after:absolute after:-bottom-0.5 after:left-0 after:w-0 after:h-0.5 after:transition-all hover:after:w-full ${
-                isDark
-                  ? 'text-indigo-400 hover:text-indigo-300 after:bg-indigo-400'
-                  : 'text-indigo-600 hover:text-indigo-500 after:bg-indigo-600'
-              }`}
-            >
-              Register
-            </Link>
-          </div>
+
           <Link
             to="/"
             className={`block text-xs font-medium transition-colors ${

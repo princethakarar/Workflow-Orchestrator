@@ -12,20 +12,7 @@ const AuthShell = ({ title, subtitle, children, footer }) => {
         isDark ? 'bg-[#0a0c18]' : 'bg-gray-50'
       }`}
     >
-      {/* Theme Toggle Button */}
-      <div className="absolute top-6 right-6 z-50">
-        <button
-          onClick={toggleTheme}
-          className={`p-3 rounded-xl border transition-all duration-300 ${
-            isDark 
-              ? 'bg-white/5 border-white/10 text-indigo-300 hover:bg-white/10' 
-              : 'bg-white border-slate-200 text-indigo-600 shadow-sm hover:shadow-md'
-          }`}
-          aria-label="Toggle theme"
-        >
-          {isDark ? <Sun size={20} /> : <Moon size={20} />}
-        </button>
-      </div>
+
 
       {/* Background Decor */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0">

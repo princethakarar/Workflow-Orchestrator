@@ -34,8 +34,8 @@ export const workflowAPI = {
      * Save workflow canvas state (nodes positions + edges).
      * Only Admin/PM can call this.
      */
-    updateWorkflow: async (projectId, { nodes, edges }) => {
-        const res = await api.put(`/api/projects/${projectId}/workflows`, { nodes, edges })
+    updateWorkflow: async (projectId, { nodes, edges, socketId }) => {
+        const res = await api.put(`/api/projects/${projectId}/workflows`, { nodes, edges, socketId })
         return res.data
     },
 

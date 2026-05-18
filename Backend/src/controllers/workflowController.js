@@ -4,6 +4,7 @@ import { Task } from "../models/Task.js"
 import { asyncHandler } from "../utils/async-handler.js"
 import { ApiError } from "../utils/api-error.js"
 import { ApiResponse } from "../utils/api-response.js"
+import { emitToProject } from "../utils/socket.js"
 
 /**
  * Derive subtask status from subtask data
@@ -127,7 +128,7 @@ export const getWorkflow = asyncHandler(async (req, res) => {
  */
 export const saveWorkflow = asyncHandler(async (req, res) => {
     const { projectId } = req.params
-    const { nodes, edges } = req.body
+    const { nodes, edges, socketId } = req.body
     const { role, _id: userId } = req.user
 
     if (!Array.isArray(nodes) || !Array.isArray(edges)) {
@@ -179,6 +180,13 @@ export const saveWorkflow = asyncHandler(async (req, res) => {
         { new: true, upsert: true, runValidators: true }
     )
 
+    // Emit real-time update to other tabs/users in the project room
+    // Exclude the sender's socket so their own tab doesn't re-trigger a fetch
+    emitToProject(projectId, "workflow-updated", {
+        projectId,
+        userId
+    }, socketId);
+
     return res.status(200).json(
         new ApiResponse(200, {
             nodeCount: nodesToSave.length,
@@ -212,6 +220,13 @@ export const deleteWorkflow = asyncHandler(async (req, res) => {
     }
 
     await Workflow.findOneAndDelete({ projectId })
+
+    // Emit real-time update to other tabs/users in the project room
+    const { socketId } = req.body || {}
+    emitToProject(projectId, "workflow-updated", {
+        projectId,
+        userId
+    }, socketId);
 
     return res.status(200).json(
         new ApiResponse(200, {}, "Workflow reset successfully")

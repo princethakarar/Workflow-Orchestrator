@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { workflowAPI } from '../services/workflowService'
 import { toast } from 'react-toastify'
 
@@ -7,7 +7,7 @@ import { toast } from 'react-toastify'
  *
  * Returns:
  *   project, nodes, edges, availableSubtasks, canEdit,
- *   loading, error, refetch
+ *   loading, error, refetch, silentRefetch
  */
 export const useWorkflow = (projectId) => {
     const [project, setProject] = useState(null)
@@ -18,10 +18,16 @@ export const useWorkflow = (projectId) => {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
 
-    const fetchWorkflow = useCallback(async () => {
+    // Track whether this is the initial load (show spinner) vs a background sync
+    const hasLoadedOnce = useRef(false)
+
+    const fetchWorkflow = useCallback(async ({ silent = false } = {}) => {
         if (!projectId) return
 
-        setLoading(true)
+        // Only show loading spinner on the very first fetch
+        if (!silent && !hasLoadedOnce.current) {
+            setLoading(true)
+        }
         setError(null)
 
         try {
@@ -33,6 +39,7 @@ export const useWorkflow = (projectId) => {
             setEdges(data.edges || [])
             setAvailableSubtasks(data.availableSubtasks || [])
             setCanEdit(data.permissions?.canEdit ?? false)
+            hasLoadedOnce.current = true
         } catch (err) {
             const msg = err.response?.data?.message || 'Failed to load workflow'
             setError(msg)
@@ -41,6 +48,11 @@ export const useWorkflow = (projectId) => {
             setLoading(false)
         }
     }, [projectId])
+
+    // Silent refetch for real-time sync — no loading spinner, no jarring UI
+    const silentRefetch = useCallback(() => {
+        return fetchWorkflow({ silent: true })
+    }, [fetchWorkflow])
 
     useEffect(() => {
         fetchWorkflow()
@@ -54,6 +66,7 @@ export const useWorkflow = (projectId) => {
         canEdit,
         loading,
         error,
-        refetch: fetchWorkflow
+        refetch: fetchWorkflow,
+        silentRefetch
     }
 }

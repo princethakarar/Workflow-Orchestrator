@@ -3,6 +3,7 @@ import {
   UploadCloud, FileText, Loader2, CheckCircle2, AlertCircle,
   ChevronDown, ChevronRight, Layers, Cpu, Users, GitMerge, Tag, Zap
 } from 'lucide-react';
+import { toast } from 'react-toastify';
 import api from '../../services/projectService';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -338,10 +339,13 @@ const AiPdfUpload = () => {
         }
         if (!userId) throw new Error('Could not resolve your user ID. Please log out and back in.');
 
+        const tasks = flattenModulesToTasks(data);
+
         const newProjectRes = await api.post('/api/projects', {
           name: data.project_name || 'AI Generated Project',
           description: data.project_summary || 'Generated from PDF documentation',
-          managerId: userId,
+          autoAllocatePM: true,
+          tasks: tasks,
         });
         const newProject = newProjectRes.data.data || newProjectRes.data;
         targetProjectId = newProject._id || newProject.id;
@@ -360,7 +364,9 @@ const AiPdfUpload = () => {
       setFile(null);
       setPrompt('');
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Failed to save tasks.');
+      const errMsg = err.response?.data?.message || err.message || 'Failed to save tasks.';
+      setError(errMsg);
+      toast.error(errMsg);
     } finally {
       setIsSaving(false);
     }
@@ -430,11 +436,11 @@ const AiPdfUpload = () => {
         {/* Submit */}
         <button type="submit" disabled={isLoading || !file} style={{
           width: '100%', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', border: 'none',
-          background: (isLoading || !file) ? 'var(--bg-muted)' : 'linear-gradient(135deg, #6366f1 0%, #7c3aed 100%)',
-          color: '#fff', fontWeight: 500, fontSize: '1rem', cursor: (isLoading || !file) ? 'not-allowed' : 'pointer',
+          background: (!file && !isLoading) ? 'var(--bg-muted)' : 'linear-gradient(135deg, #6366f1 0%, #7c3aed 100%)',
+          color: (!file && !isLoading) ? 'var(--text-muted)' : '#fff', fontWeight: 500, fontSize: '1rem', cursor: (isLoading || !file) ? 'not-allowed' : 'pointer',
           display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem',
-          transition: 'background 0.2s', opacity: (isLoading || !file) ? 0.6 : 1,
-          boxShadow: (isLoading || !file) ? 'none' : '0 4px 12px rgba(99, 102, 241, 0.35)'
+          transition: 'background 0.2s', opacity: (!file && !isLoading) ? 0.6 : isLoading ? 0.85 : 1,
+          boxShadow: (!file && !isLoading) ? 'none' : '0 4px 12px rgba(99, 102, 241, 0.35)'
         }}
         >
           {isLoading ? (<><Loader2 style={{ width: 20, height: 20, animation: 'spin 1s linear infinite' }} /><span>Analyzing Document…</span></>) : (<span>Generate Execution Plan</span>)}
@@ -512,7 +518,7 @@ const AiPdfUpload = () => {
               style={{
                 padding: '0.625rem 1.5rem', borderRadius: '0.5rem', border: 'none',
                 background: (isSaving || !selectedProjectId) ? 'var(--bg-muted)' : '#16a34a',
-                color: '#fff', fontWeight: 500, cursor: (isSaving || !selectedProjectId) ? 'not-allowed' : 'pointer',
+                color: (isSaving || !selectedProjectId) ? 'var(--text-muted)' : '#fff', fontWeight: 500, cursor: (isSaving || !selectedProjectId) ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', gap: '0.5rem',
                 opacity: (isSaving || !selectedProjectId) ? 0.6 : 1, transition: 'background 0.2s',
                 boxShadow: (isSaving || !selectedProjectId) ? 'none' : '0 4px 12px rgba(22, 163, 74, 0.25)'

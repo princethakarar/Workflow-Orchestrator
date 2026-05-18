@@ -324,4 +324,27 @@ html.dark {
 
 .react-flow__controls-button:hover {
   background-color: var(--bg-hover) !important;
+}
+
+/* ── Select / Option Dark-Mode Fix ─────────────────────────────────────── */
+html.dark select {
+  background-color: #1f2937;
+  color: #f1f5f9;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark select option {
+  background-color: #1f2937;
+  color: #f1f5f9;
+}
+
+html.dark select option:checked {
+  background-color: #4338ca;
+  color: #ffffff;
+}
+
+html.dark select:focus {
+  border-color: rgba(99, 102, 241, 0.5);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
 }

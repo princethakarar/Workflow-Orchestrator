@@ -5,6 +5,7 @@ import { asyncHandler } from "../utils/async-handler.js"
 import { ApiError } from "../utils/api-error.js"
 import { ApiResponse } from "../utils/api-response.js"
 import { releaseProjectTeam, calculateProjectProgress } from "../services/projectCompletionService.js"
+import { findBestProjectManager } from "../services/pmAllocationService.js"
 
 /**
  * @desc    Create a new project
@@ -12,20 +13,41 @@ import { releaseProjectTeam, calculateProjectProgress } from "../services/projec
  * @access  Private (Admin, Project Manager)
  */
 export const createProject = asyncHandler(async (req, res) => {
-    const { name, description, startDate, endDate, priority, tags, managerId } = req.body
+    const { name, description, startDate, endDate, priority, tags, managerId, autoAllocatePM } = req.body
 
     // Validate required fields
     if (!name || name.trim() === '') {
         throw new ApiError(400, "Project name is required")
     }
 
-    if (!managerId) {
+    let finalManagerId = managerId;
+
+    // Auto-allocate Project Manager if requested
+    if (autoAllocatePM) {
+        const bestPM = await findBestProjectManager({
+            name: name?.trim(),
+            description: description?.trim(),
+            // Tasks are not yet created when Project is created,
+            // but the frontend might send them or we can just use name/desc.
+            // For AI-generated projects, the frontend knows the tasks before calling /api/projects.
+            // However, the current /api/projects endpoint doesn't receive tasks.
+            // We should accept tasks in the body for scoring if autoAllocatePM is true.
+            tasks: req.body.tasks || []
+        });
+
+        if (!bestPM) {
+            throw new ApiError(400, "No Project Manager is currently available");
+        }
+        finalManagerId = bestPM._id;
+    }
+
+    if (!finalManagerId) {
         throw new ApiError(400, "Project Manager is required")
     }
 
     // Verify manager exists and has correct role
     const User = mongoose.model('User');
-    const manager = await User.findById(managerId);
+    const manager = await User.findById(finalManagerId);
 
     if (!manager) {
         throw new ApiError(404, "Selected project manager not found")
@@ -40,13 +62,20 @@ export const createProject = asyncHandler(async (req, res) => {
         name: name.trim(),
         description: description?.trim() || '',
         owner: req.user._id,
-        manager: managerId,
+        manager: finalManagerId,
         startDate,
         endDate,
         priority: priority || 'medium',
         tags: tags || [],
         status: 'planning'
     })
+
+    // If auto-allocated, update PM's status and currentProjects
+    if (autoAllocatePM) {
+        manager.status = 'occupied';
+        manager.currentProjects.push(project._id);
+        await manager.save();
+    }
 
     // Populate owner and manager details
     await project.populate('owner', 'username email fullName avatar')
