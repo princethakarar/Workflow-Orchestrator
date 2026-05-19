@@ -24,21 +24,25 @@ app.use(express.static("public"))
 app.use(cookieParser())
 
 // Cookies across subdomains require CORS with an explicit origin and credentials=true.
-// FRONTEND_URL should be the exact origin (no trailing slash).
-const frontendOrigin = process.env.FRONTEND_URL?.replace(/\/$/, '') || "http://localhost:5173"
+// FRONTEND_URL can be a single URL or a comma-separated list of origins (no trailing slashes).
+const allowedOrigins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    ...((process.env.FRONTEND_URL || "")
+        .split(",")
+        .map(url => url.trim().replace(/\/$/, ''))
+        .filter(Boolean))
+]
 
 app.use(cors({
     origin: (origin, callback) => {
         // Non-browser requests often have no Origin header.
         if (!origin) return callback(null, true)
 
-        // Allow local dev origins as well.
-        if (origin === "http://localhost:5173" || origin === "http://localhost:3000") {
+        if (allowedOrigins.includes(origin)) {
             return callback(null, true)
         }
-
-        if (origin === frontendOrigin) return callback(null, true)
-        return callback(new Error("Not allowed by CORS"))
+        return callback(new Error(`Not allowed by CORS: ${origin}`))
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
