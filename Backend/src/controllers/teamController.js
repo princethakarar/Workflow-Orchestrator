@@ -117,8 +117,8 @@ export const getProjectManagers = asyncHandler(async (req, res) => {
     const { search } = req.query;
 
     const filter = {
-        role: 'projectManager',
-        status: 'available'
+        role: { $in: ['projectManager', 'admin'] },
+        status: { $ne: 'inactive' }
     };
 
     if (search) {
@@ -128,31 +128,13 @@ export const getProjectManagers = asyncHandler(async (req, res) => {
         ];
     }
 
-    // Get all project managers matching the filter
+    // Get all project managers and admins matching the filter
     const allManagers = await User.find(filter)
-        .select('fullName email avatar specialization')
+        .select('fullName email avatar specialization role status')
         .sort({ fullName: 1 });
 
-    // Get all active/planning/onHold projects to find occupied PMs
-    const activeProjects = await Project.find({
-        status: { $nin: ['completed', 'cancelled'] }
-    }).select('manager');
-
-    // Collect all occupied PM IDs
-    const occupiedPMIds = new Set();
-    activeProjects.forEach(project => {
-        if (project.manager) {
-            occupiedPMIds.add(project.manager.toString());
-        }
-    });
-
-    // Filter to get only available PMs (not managing active projects)
-    const availableManagers = allManagers.filter(
-        pm => !occupiedPMIds.has(pm._id.toString())
-    );
-
     return res.status(200).json(
-        new ApiResponse(200, availableManagers, `Found ${availableManagers.length} available project manager(s)`)
+        new ApiResponse(200, allManagers, `Found ${allManagers.length} active manager(s)`)
     );
 });
 
@@ -382,10 +364,10 @@ export const deleteTeamMember = asyncHandler(async (req, res) => {
         if (activeProjects > 0) {
             // Require project transfer
             if (!transferProjectsTo) {
-                // Return list of available PMs
+                // Return list of available PMs (and active admins)
                 const availablePMs = await User.find({
-                    role: 'projectManager',
-                    status: 'available',
+                    role: { $in: ['projectManager', 'admin'] },
+                    status: { $ne: 'inactive' },
                     _id: { $ne: user._id }
                 }).select('_id fullName email specialization')
 
@@ -401,13 +383,9 @@ export const deleteTeamMember = asyncHandler(async (req, res) => {
 
             // Validate new PM
             const newPM = await User.findById(transferProjectsTo)
-            if (!newPM || newPM.role !== 'projectManager') {
-                throw new ApiError(400, "Invalid project manager selected for transfer")
+            if (!newPM || (newPM.role !== 'projectManager' && newPM.role !== 'admin')) {
+                throw new ApiError(400, "Invalid project manager or admin selected for transfer")
             }
-
-            // Transfer projects using transaction
-            const session = await mongoose.startSession()
-            session.startTransaction()
 
             try {
                 // Transfer all active projects
@@ -416,14 +394,11 @@ export const deleteTeamMember = asyncHandler(async (req, res) => {
                         manager: user._id,
                         status: { $nin: ['completed', 'cancelled'] }
                     },
-                    { $set: { manager: transferProjectsTo } },
-                    { session }
+                    { $set: { manager: transferProjectsTo } }
                 )
 
                 // Delete user
-                await User.findByIdAndDelete(id, { session })
-
-                await session.commitTransaction()
+                await User.findByIdAndDelete(id)
 
                 return res.status(200).json(
                     new ApiResponse(200, {
@@ -432,10 +407,7 @@ export const deleteTeamMember = asyncHandler(async (req, res) => {
                     }, `User deleted successfully. ${activeProjects} project(s) transferred to ${newPM.fullName}`)
                 )
             } catch (error) {
-                await session.abortTransaction()
                 throw error
-            } finally {
-                session.endSession()
             }
         }
     }
@@ -569,31 +541,23 @@ export const updateTeamMember = asyncHandler(async (req, res) => {
 
         // CONDITION B: Has active projects and replacement is provided
         if (activeProjects > 0 && transferProjectsTo) {
-            // Validate replacement PM exists and is a PM
+            // Validate replacement PM exists and is a PM or Admin
             const newPM = await User.findById(transferProjectsTo)
-            if (!newPM || newPM.role !== 'projectManager') {
-                throw new ApiError(400, "Invalid replacement project manager")
+            if (!newPM || (newPM.role !== 'projectManager' && newPM.role !== 'admin')) {
+                throw new ApiError(400, "Invalid replacement project manager or admin")
             }
 
-            // Start transaction
-            const session = await User.startSession()
-
             try {
-                session.startTransaction()
-
                 // Transfer all active projects
                 await Project.updateMany(
                     { manager: user._id, status: { $nin: ['completed', 'cancelled'] } },
-                    { $set: { manager: transferProjectsTo } },
-                    { session }
+                    { $set: { manager: transferProjectsTo } }
                 )
 
                 // Update user role and specialization
                 user.role = role
                 user.specialization = specialization
-                await user.save({ session })
-
-                await session.commitTransaction()
+                await user.save()
 
                 return res.status(200).json(
                     new ApiResponse(
@@ -606,10 +570,7 @@ export const updateTeamMember = asyncHandler(async (req, res) => {
                     )
                 )
             } catch (error) {
-                await session.abortTransaction()
                 throw error
-            } finally {
-                session.endSession()
             }
         }
     }

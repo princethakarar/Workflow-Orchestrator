@@ -9,6 +9,7 @@ import DeleteMemberModal from './DeleteMemberModal';
 import Avatar from '../common/Avatar';
 import { useTheme } from '../../context/ThemeContext';
 import { authFormClasses } from '../../utils/authFormStyles';
+import api from '../../services/api';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -122,11 +123,10 @@ const UserDetailModal = ({ isOpen, onClose, member: initialMember, onSuccess, is
 
   const fetchAvailablePMs = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/team`, { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed to fetch team');
-      const data = await res.json();
+      const res = await api.get('/api/team');
+      const data = res.data;
       const pms = (data.data?.users || []).filter(
-        u => u.role === 'projectManager' && u._id !== member._id
+        u => (u.role === 'projectManager' || u.role === 'admin') && u._id !== member._id
       );
       setAvailablePMs(pms);
     } catch {
@@ -163,33 +163,24 @@ const UserDetailModal = ({ isOpen, onClose, member: initialMember, onSuccess, is
         ...(requiresTransfer && transferTo && { transferProjectsTo: transferTo })
       };
 
-      const res = await fetch(`${API_URL}/api/team/${member._id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(updateData)
-      });
+      const res = await api.patch(`/api/team/${member._id}`, updateData);
+      const data = res.data;
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (res.status === 409 && data.data?.requireTransfer) {
-          setRequiresTransfer(true);
-          setProjectCount(data.data.projectCount);
-        } else {
-          throw new Error(data.message || 'Failed to update user');
-        }
-      } else {
-        toast.success(data.message || 'Team member updated successfully');
-        const updated = data.data?.user || data.data || member;
-        setMember(updated);
-        setFieldValues({ role: updated.role, specialization: updated.specialization });
-        resetEditState();
-        if (onSuccess) onSuccess();
-      }
+      toast.success(data.message || 'Team member updated successfully');
+      const updated = data.data?.user || data.data || member;
+      setMember(updated);
+      setFieldValues({ role: updated.role, specialization: updated.specialization });
+      resetEditState();
+      if (onSuccess) onSuccess();
     } catch (err) {
-      setSaveError(err.message || 'Failed to update user');
-      toast.error(err.message || 'Failed to update user');
+      if (err.response?.status === 409 && err.response?.data?.data?.requireTransfer) {
+        setRequiresTransfer(true);
+        setProjectCount(err.response.data.data.projectCount);
+      } else {
+        const errorMsg = err.response?.data?.message || err.message || 'Failed to update user';
+        setSaveError(errorMsg);
+        toast.error(errorMsg);
+      }
     } finally {
       setSaving(false);
     }
@@ -206,14 +197,10 @@ const UserDetailModal = ({ isOpen, onClose, member: initialMember, onSuccess, is
   const handleDeleteConfirm = async (memberId, transferProjectsTo) => {
     setDeleteModal(prev => ({ ...prev, loading: true }));
     try {
-      const res = await fetch(`${API_URL}/api/team/${memberId}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(transferProjectsTo ? { transferProjectsTo } : {})
+      const res = await api.delete(`/api/team/${memberId}`, {
+        data: transferProjectsTo ? { transferProjectsTo } : {}
       });
-      const data = await res.json();
-      if (!res.ok) throw Object.assign(new Error(data.message), { response: { data } });
+      const data = res.data;
 
       toast.success(data.message || 'Team member deleted successfully');
       setDeleteModal({ isOpen: false, loading: false });
