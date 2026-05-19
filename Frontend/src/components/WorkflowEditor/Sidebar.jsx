@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Search, RefreshCw, GitBranch, RotateCcw } from 'lucide-react'
+import { Search, RefreshCw, GitBranch, RotateCcw, ChevronLeft } from 'lucide-react'
 import Avatar from '../common/Avatar'
 
 const getStatusColor = (status) => {
@@ -25,8 +25,9 @@ const getStatusDot = (status) => {
  *   - onDragStart: (event, subtask) => void
  *   - onRefresh: () => void
  *   - onReset: () => void   — resets canvas to last saved state
+ *   - onClose: () => void   — collapses the sidebar
  */
-const SubtaskSidebar = ({ subtasks = [], onDragStart, onRefresh, onReset }) => {
+const SubtaskSidebar = ({ subtasks = [], onDragStart, onRefresh, onReset, onClose }) => {
     const [searchTerm, setSearchTerm] = useState('')
 
     // Group by parent task title
@@ -61,16 +62,25 @@ const SubtaskSidebar = ({ subtasks = [], onDragStart, onRefresh, onReset }) => {
                         <GitBranch className="w-4 h-4" style={{ color: 'var(--primary)' }} />
                         <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Subtasks</h2>
                     </div>
-                    <button
-                        onClick={onRefresh}
-                        className="p-1.5 rounded-lg transition-colors"
-                        style={{ color: 'var(--text-muted)' }}
-                        onMouseOver={e => e.currentTarget.style.color='var(--primary)'}
-                        onMouseOut={e => e.currentTarget.style.color='var(--text-muted)'}
-                        title="Refresh"
-                    >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                    </button>
+                    
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={onRefresh}
+                            className="p-1.5 rounded-lg transition-colors text-gray-400 hover:text-indigo-600 hover:bg-gray-100 dark:hover:bg-gray-800"
+                            title="Refresh"
+                        >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                        </button>
+                        {onClose && (
+                            <button
+                                onClick={onClose}
+                                className="p-1.5 rounded-lg transition-colors text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                                title="Collapse Sidebar"
+                            >
+                                <ChevronLeft className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
                 </div>
                 <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                     Drag subtasks onto canvas to add them

@@ -18,19 +18,19 @@ const SidebarItem = ({ icon: Icon, label, path, active, onClick }) => (
   <Link
     to={path}
     onClick={onClick}
-    className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
+    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-200 group relative text-sm font-medium ${
       active
         ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/30"
         : "hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
     }`}
     style={{ color: active ? "#fff" : "var(--text-secondary)" }}
   >
-    <Icon size={20} style={{ color: active ? "#fff" : "var(--text-muted)" }} />
-    <span className="font-medium">{label}</span>
+    <Icon size={18} style={{ color: active ? "#fff" : "var(--text-muted)" }} />
+    <span className="truncate">{label}</span>
     {active && (
       <motion.div
         layoutId="active-pill-developer"
-        className="absolute left-0 w-1 h-8 bg-indigo-600 rounded-r-full"
+        className="absolute left-0 w-1 h-7 bg-indigo-600 rounded-r-full"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -74,21 +74,33 @@ const DeveloperLayout = () => {
     >
       {/* Top Header (full width) */}
       <header
-        className="h-16 px-6 flex items-center justify-between relative z-50 shrink-0"
+        className="h-16 px-4 md:px-6 flex items-center justify-between relative z-50 shrink-0"
         style={headerStyle}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Hamburger button on mobile — aligned far left */}
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="md:hidden p-2 -ml-2 rounded-lg transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+            style={{
+              color: "var(--text-secondary)",
+              background: "transparent",
+            }}
+          >
+            <Menu size={22} />
+          </button>
+
           <img
             src="/workflow-orchestrator-icon.svg"
             alt="Workflow Orchestrator"
-            style={{ height: "40px", width: "auto", flexShrink: 0 }}
+            style={{ height: "36px", width: "auto", flexShrink: 0 }}
           />
           <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.05 }}>
             <span
               style={{
                 fontFamily: "Inter, sans-serif",
                 fontWeight: 700,
-                fontSize: "15px",
+                fontSize: "14px",
                 letterSpacing: "0.01em",
                 color: "var(--text-header)",
               }}
@@ -96,10 +108,11 @@ const DeveloperLayout = () => {
               Workflow
             </span>
             <span
+              className="hidden sm:block"
               style={{
                 fontFamily: "Inter, sans-serif",
                 fontWeight: 600,
-                fontSize: "13px",
+                fontSize: "11px",
                 letterSpacing: "0.06em",
                 textTransform: "uppercase",
                 color: "var(--text-muted)",
@@ -108,16 +121,6 @@ const DeveloperLayout = () => {
               Orchestrator
             </span>
           </div>
-          <button
-            onClick={() => setIsSidebarOpen(true)}
-            className="md:hidden p-2 rounded-lg transition-colors"
-            style={{
-              color: "var(--text-secondary)",
-              background: "transparent",
-            }}
-          >
-            <Menu size={24} />
-          </button>
         </div>
 
         <div className="flex items-center gap-3">
@@ -228,10 +231,10 @@ const DeveloperLayout = () => {
       <div className="flex flex-1 overflow-hidden">
       {/* Sidebar for Desktop */}
       <aside
-        className="hidden md:flex flex-col w-64 relative z-10"
+        className="hidden md:flex flex-col w-60 relative z-10 shrink-0"
         style={sidebarStyle}
       >
-        <nav className="flex-1 px-4 space-y-2 mt-4">
+        <nav className="flex-1 px-3 space-y-1.5 mt-4 overflow-auto">
           {menuItems.map((item) => (
             <SidebarItem
               key={item.path}
@@ -244,11 +247,11 @@ const DeveloperLayout = () => {
         <div className="p-4" style={{ borderTop: "1px solid var(--border)" }}>
           <button
             onClick={handleLogout}
-            className="flex w-full items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-red-50 dark:hover:bg-red-900/20"
+            className="flex w-full items-center gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-red-50 dark:hover:bg-red-900/20 text-sm font-medium"
             style={{ color: "var(--text-secondary)" }}
           >
-            <LogOut size={20} />
-            <span className="font-medium">Logout</span>
+            <LogOut size={18} />
+            <span className="truncate">Logout</span>
           </button>
         </div>
       </aside>
@@ -269,51 +272,24 @@ const DeveloperLayout = () => {
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed left-0 top-16 bottom-0 w-64 shadow-2xl z-50 md:hidden flex flex-col"
+              className="fixed left-0 top-0 bottom-0 w-60 shadow-2xl z-50 md:hidden flex flex-col"
               style={sidebarStyle}
             >
-              <div className="p-6 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <img
-                    src="/workflow-orchestrator-logo.svg"
-                    alt="Workflow Orchestrator"
-                    className="h-16 w-auto"
-                  />
-                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.05 }}>
-                    <span
-                      style={{
-                        fontFamily: "Inter, sans-serif",
-                        fontWeight: 700,
-                        fontSize: "15px",
-                        letterSpacing: "0.01em",
-                        color: "var(--text-header)",
-                      }}
-                    >
-                      Workflow
-                    </span>
-                    <span
-                      style={{
-                        fontFamily: "Inter, sans-serif",
-                        fontWeight: 600,
-                        fontSize: "13px",
-                        letterSpacing: "0.06em",
-                        textTransform: "uppercase",
-                        color: "var(--text-muted)",
-                      }}
-                    >
-                      Orchestrator
-                    </span>
-                  </div>
-                </div>
+              {/* Sleek, clean and compact mobile sidebar header without redundant logo */}
+              <div className="p-4 flex items-center justify-between border-b" style={{ borderColor: 'var(--border)' }}>
+                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                  Developer Navigation
+                </span>
                 <button
                   onClick={() => setIsSidebarOpen(false)}
+                  className="p-1 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
                   style={{ color: "var(--text-secondary)" }}
                 >
-                  <X size={24} />
+                  <X size={20} />
                 </button>
               </div>
 
-              <nav className="flex-1 px-4 space-y-2 mt-4">
+              <nav className="flex-1 px-3 space-y-1.5 mt-4 overflow-auto">
                 {menuItems.map((item) => (
                   <SidebarItem
                     key={item.path}
@@ -330,11 +306,11 @@ const DeveloperLayout = () => {
               >
                 <button
                   onClick={handleLogout}
-                  className="flex w-full items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-red-50 dark:hover:bg-red-900/20"
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-red-50 dark:hover:bg-red-900/20 text-sm font-medium"
                   style={{ color: "var(--text-secondary)" }}
                 >
-                  <LogOut size={20} />
-                  <span className="font-medium">Logout</span>
+                  <LogOut size={18} />
+                  <span className="truncate">Logout</span>
                 </button>
               </div>
             </motion.aside>

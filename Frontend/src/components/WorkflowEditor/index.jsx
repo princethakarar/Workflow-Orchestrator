@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
     ReactFlow,
     Background,
@@ -71,6 +72,20 @@ const WorkflowEditor = ({
     const reactFlowWrapper = useRef(null)
     const [rfInstance, setRfInstance] = useState(null)
     const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 })
+
+    const [isWorkflowSidebarOpen, setIsWorkflowSidebarOpen] = useState(true)
+    const [isMobileOrTablet, setIsMobileOrTablet] = useState(false)
+
+    useEffect(() => {
+        setIsWorkflowSidebarOpen(window.innerWidth > 1024)
+        setIsMobileOrTablet(window.innerWidth <= 1024)
+        
+        const handleResize = () => {
+            setIsMobileOrTablet(window.innerWidth <= 1024)
+        }
+        window.addEventListener('resize', handleResize)
+        return () => window.removeEventListener('resize', handleResize)
+    }, [])
 
     // ── Sync guard ──────────────────────────────────────────────────────────
     // When true, state changes came from a remote sync (not local user edits)
@@ -300,23 +315,66 @@ const WorkflowEditor = ({
     // ── Render ──────────────────────────────────────────────────────────────
 
     return (
-        <div className="flex h-full" style={{ backgroundColor: 'var(--bg-page)' }}>
+        <div className="flex h-full relative overflow-hidden" style={{ backgroundColor: 'var(--bg-page)' }}>
             {/* Sidebar — Admin/PM only */}
-            {canEdit && (
-                <SubtaskSidebar
-                    subtasks={availableSubtasks}
-                    onDragStart={(e, st) => {
-                        e.dataTransfer.setData('application/reactflow-subtask', JSON.stringify(st))
-                        e.dataTransfer.effectAllowed = 'move'
-                    }}
-                    onRefresh={() => window.location.reload()}
-                    onReset={handleReset}
-                />
-            )}
+            <AnimatePresence>
+                {isWorkflowSidebarOpen && canEdit && (
+                    <>
+                        {/* Backdrop Overlay for mobile/tablet screens */}
+                        {isMobileOrTablet && (
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 0.4 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setIsWorkflowSidebarOpen(false)}
+                                className="absolute inset-0 bg-black z-20 backdrop-blur-[1px]"
+                            />
+                        )}
+
+                        <motion.div
+                            initial={{ x: -288, width: 0 }}
+                            animate={{ x: 0, width: 288 }}
+                            exit={{ x: -288, width: 0 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+                            className="h-full z-30 shrink-0 select-none overflow-hidden flex flex-col"
+                            style={{
+                                position: isMobileOrTablet ? 'absolute' : 'relative',
+                                left: 0,
+                                top: 0,
+                                bottom: 0,
+                                height: '100%'
+                            }}
+                        >
+                            <SubtaskSidebar
+                                subtasks={availableSubtasks}
+                                onDragStart={(e, st) => {
+                                    e.dataTransfer.setData('application/reactflow-subtask', JSON.stringify(st))
+                                    e.dataTransfer.effectAllowed = 'move'
+                                }}
+                                onRefresh={() => window.location.reload()}
+                                onReset={handleReset}
+                                onClose={() => setIsWorkflowSidebarOpen(false)}
+                            />
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
 
             {/* Canvas */}
-            <div className="flex-1 relative overflow-hidden" ref={reactFlowWrapper} onMouseMove={handleMouseMove}>
+            <div className="flex-1 relative overflow-hidden h-full w-full" ref={reactFlowWrapper} onMouseMove={handleMouseMove}>
                 
+                {/* floating show sidebar button */}
+                {!isWorkflowSidebarOpen && canEdit && (
+                    <button
+                        onClick={() => setIsWorkflowSidebarOpen(true)}
+                        className="absolute left-4 top-4 z-20 flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/20 active:scale-95 transition-all duration-200 cursor-pointer"
+                        title="Show Subtasks"
+                    >
+                        <GitBranch className="w-4 h-4 animate-pulse" />
+                        <span className="text-xs font-bold uppercase tracking-wider">Subtasks</span>
+                    </button>
+                )}
+
                 {/* Dynamic Cursor Glow */}
                 <div 
                     className="pointer-events-none absolute inset-0 z-0 transition-opacity duration-300"
