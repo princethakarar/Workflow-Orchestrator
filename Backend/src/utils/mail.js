@@ -68,7 +68,10 @@ const sendEmail = async (options) => {
             },
             tls: {
                 rejectUnauthorized: false
-            }
+            },
+            connectionTimeout: 10000,  // 10s — fail fast if port is blocked
+            greetingTimeout: 10000,    // 10s — fail fast if SMTP server doesn't respond
+            socketTimeout: 10000       // 10s — fail fast if connection stalls mid-send
         })
 
         const mail = {
