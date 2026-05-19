@@ -15,8 +15,11 @@ const sendEmail = async (options) => {
 
     // Option A: Use Resend REST API if RESEND_API_KEY is configured
     if (process.env.RESEND_API_KEY) {
-        console.log("📨 Attempting to send email via Resend REST API...")
-        const fromAddress = process.env.MAIL_FROM_ADDRESS || "onboarding@resend.dev"
+        // IMPORTANT: Resend requires a verified domain for 'from' address.
+        // Use RESEND_FROM_ADDRESS (or default to Resend's sandbox sender).
+        // Do NOT use a Gmail/Yahoo/Hotmail address — Resend will reject it.
+        const fromAddress = process.env.RESEND_FROM_ADDRESS || "onboarding@resend.dev"
+        console.log(`📨 Attempting to send email via Resend REST API (from: ${fromAddress}, to: ${options.email})...`)
         try {
             const res = await fetch("https://api.resend.com/emails", {
                 method: "POST",
@@ -36,7 +39,8 @@ const sendEmail = async (options) => {
             const data = await res.json()
 
             if (!res.ok) {
-                throw new Error(data.message || JSON.stringify(data))
+                console.error("❌ Resend API error response:", JSON.stringify(data, null, 2))
+                throw new Error(data.message || data.error?.message || JSON.stringify(data))
             }
 
             console.log("✅ Email sent successfully via Resend API:", data.id)
