@@ -11,7 +11,12 @@ const __dirname = path.dirname(__filename);
 
 
 // ── RAG service config ──────────────────────────────────────────────────────
-const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || "http://127.0.0.1:5001/rag";
+let RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || "http://127.0.0.1:5001/rag";
+
+// Ensure the URL ends with /rag (handles cases where only the base domain is provided)
+if (RAG_SERVICE_URL && !RAG_SERVICE_URL.endsWith("/rag")) {
+    RAG_SERVICE_URL = RAG_SERVICE_URL.replace(/\/$/, "") + "/rag";
+}
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
@@ -108,10 +113,9 @@ export const uploadAndProcessPdf = async (req, res, next) => {
         } catch (ragErr) {
             return res.status(502).json({
                 success: false,
-                message:
-                    "Failed to communicate with the RAG microservice. " +
-                    "Make sure the Python service is running: cd Backend/rag_service && python app.py",
-                error: ragErr.message,
+                message: "Failed to communicate with the RAG microservice.",
+                details: ragErr.message,
+                hint: "Check if the RAG service URL is correct and the service is healthy."
             });
         }
 
