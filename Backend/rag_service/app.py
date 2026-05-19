@@ -1,9 +1,8 @@
 import os
-# Fix HuggingFace DNS issues (Errno 11001) by using the official mirror
-# THIS MUST BE BEFORE IMPORTS
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 # Force CPU-only execution and prevent CUDA driver libraries from loading into memory
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
+# Disable parallelism in Hugging Face tokenizers to prevent memory leak warnings/spikes
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
