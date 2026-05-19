@@ -1,9 +1,7 @@
 import { useState, useCallback } from 'react';
-import axios from 'axios';
 import { toast } from 'react-toastify';
 import { handleError } from '../utils/errorHandler';
-
-const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+import api from '../services/api';
 
 /**
  * Custom hook for team management operations
@@ -35,9 +33,7 @@ export const useTeam = () => {
             if (filters.page) params.append('page', filters.page);
             if (filters.limit) params.append('limit', filters.limit);
 
-            const response = await axios.get(`${API_URL}/api/team?${params}`, {
-                withCredentials: true
-            });
+            const response = await api.get(`/api/team?${params}`);
 
             if (response.data.success) {
                 setTeam(response.data.data.users);
@@ -60,9 +56,7 @@ export const useTeam = () => {
         setError(null);
 
         try {
-            const response = await axios.post(`${API_URL}/api/team/invite`, data, {
-                withCredentials: true
-            });
+            const response = await api.post('/api/team/invite', data);
 
             if (response.data.success) {
                 toast.success(response.data.message);
@@ -88,11 +82,7 @@ export const useTeam = () => {
         setError(null);
 
         try {
-            const response = await axios.patch(
-                `${API_URL}/api/team/${id}/status`,
-                { status },
-                { withCredentials: true }
-            );
+            const response = await api.patch(`/api/team/${id}/status`, { status });
 
             if (response.data.success) {
                 toast.success(response.data.message);
@@ -120,9 +110,7 @@ export const useTeam = () => {
         setError(null);
 
         try {
-            const response = await axios.delete(`${API_URL}/api/team/${id}`, {
-                withCredentials: true
-            });
+            const response = await api.delete(`/api/team/${id}`);
 
             if (response.data.success) {
                 toast.success(response.data.message);
@@ -150,11 +138,7 @@ export const useTeam = () => {
         setError(null);
 
         try {
-            const response = await axios.post(
-                `${API_URL}/api/team/${id}/resend`,
-                {},
-                { withCredentials: true }
-            );
+            const response = await api.post(`/api/team/${id}/resend`, {});
 
             if (response.data.success) {
                 toast.success(response.data.message);
