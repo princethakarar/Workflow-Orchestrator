@@ -1,5 +1,17 @@
+# ── CPU-ONLY PyTorch Installation ──────────────────────────────────────────────
+# CRITICAL: Use --index-url (NOT --extra-index-url) to make the CPU wheel
+# repository the PRIMARY source. PyPI is added back as secondary via
+# --extra-index-url. This guarantees pip resolves torch from the CPU index
+# first and NEVER downloads GPU/CUDA/NVIDIA wheels.
+#
+# The +cpu local version suffix ensures pip cannot accidentally match
+# a GPU wheel from PyPI (PyPI has torch==2.2.2, NOT torch==2.2.2+cpu).
+# ───────────────────────────────────────────────────────────────────────────────
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple/
+torch==2.2.2+cpu
+sentence-transformers
 flask
 flask-cors
 chromadb
-sentence-transformers
 pymupdf
