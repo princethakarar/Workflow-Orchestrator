@@ -13,84 +13,102 @@ const sendEmail = async (options) => {
     const emailTextual = mailGenerator.generatePlaintext(options.mailgenContent)
     const emailHTML = mailGenerator.generate(options.mailgenContent)
 
-    // Check if SMTP is configured
-    if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-        console.warn("⚠️ SMTP credentials are not fully configured in environment variables.")
-        console.log("\n==================================================")
-        console.log("⚠️  EMAIL DELIVERY FALLBACK LOG (SMTP NOT CONFIGURED)  ⚠️")
-        console.log(`Recipient: ${options.email}`)
-        console.log(`Subject:   ${options.subject}`)
-        console.log("--------------------------------------------------")
-        console.log("Plain text content:")
-        console.log(emailTextual)
-        console.log("==================================================\n")
+    // Option A: Use Resend REST API if RESEND_API_KEY is configured
+    if (process.env.RESEND_API_KEY) {
+        console.log("📨 Attempting to send email via Resend REST API...")
+        const fromAddress = process.env.MAIL_FROM_ADDRESS || "onboarding@resend.dev"
+        try {
+            const res = await fetch("https://api.resend.com/emails", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    from: fromAddress,
+                    to: options.email,
+                    subject: options.subject,
+                    html: emailHTML,
+                    text: emailTextual
+                })
+            })
 
-        return {
-            messageId: `mock_unconfigured_${Date.now()}`,
-            fallbackUsed: true,
-            recipient: options.email
+            const data = await res.json()
+
+            if (!res.ok) {
+                throw new Error(data.message || JSON.stringify(data))
+            }
+
+            console.log("✅ Email sent successfully via Resend API:", data.id)
+            return data
+        } catch (error) {
+            console.error("❌ Resend REST API failed:", error.message)
+            console.log("🔄 Falling back to SMTP configuration...")
         }
     }
 
-    // Log SMTP configuration for debugging (without exposing full password)
-    console.log("📧 SMTP Config:", {
-        host: process.env.SMTP_HOST,
-        port: process.env.SMTP_PORT,
-        secure: process.env.SMTP_SECURE,
-        user: process.env.SMTP_USER,
-        passExists: !!process.env.SMTP_PASS,
-    })
-
-    const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT),
-        secure: process.env.SMTP_SECURE === "true",
-        auth: {
+    // Option B: Fallback to Nodemailer SMTP
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+        // Log SMTP configuration for debugging (without exposing full password)
+        console.log("📧 SMTP Config:", {
+            host: process.env.SMTP_HOST,
+            port: process.env.SMTP_PORT,
+            secure: process.env.SMTP_SECURE,
             user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS,
-        },
-        tls: {
-            rejectUnauthorized: false
-        }
-    })
-
-    const mail = {
-        from: process.env.MAIL_FROM_ADDRESS || "noreply@workfloworchestrator.com",
-        to: options.email,
-        subject: options.subject,
-        text: emailTextual,
-        html: emailHTML
-    }
-
-    try {
-        console.log(`📨 Attempting to send email to: ${options.email}`)
-        const info = await transporter.sendMail(mail)
-        console.log("✅ Email sent successfully:", info.messageId)
-        return info
-    } catch (error) {
-        console.error("❌ Email service failed. Make sure you have provided valid SMTP credentials in your .env file")
-        console.error("📋 Error details:", {
-            message: error.message,
-            code: error.code,
-            command: error.command
+            passExists: !!process.env.SMTP_PASS,
         })
 
-        // Print beautiful, highly visible fallback details in logs
-        console.log("\n==================================================")
-        console.log("⚠️  EMAIL DELIVERY FALLBACK LOG (DELIVERY FAILED)  ⚠️")
-        console.log(`Recipient: ${options.email}`)
-        console.log(`Subject:   ${options.subject}`)
-        console.log("--------------------------------------------------")
-        console.log("Plain text content:")
-        console.log(emailTextual)
-        console.log("==================================================\n")
+        const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: Number(process.env.SMTP_PORT),
+            secure: process.env.SMTP_SECURE === "true",
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
+            },
+            tls: {
+                rejectUnauthorized: false
+            }
+        })
 
-        // Return a mock success response so caller flows (invite, register, reset password) do not crash
-        return {
-            messageId: `mock_failed_${Date.now()}`,
-            fallbackUsed: true,
-            recipient: options.email
+        const mail = {
+            from: process.env.MAIL_FROM_ADDRESS || "noreply@workfloworchestrator.com",
+            to: options.email,
+            subject: options.subject,
+            text: emailTextual,
+            html: emailHTML
         }
+
+        try {
+            console.log(`📨 Attempting to send email via SMTP to: ${options.email}`)
+            const info = await transporter.sendMail(mail)
+            console.log("✅ Email sent successfully via SMTP:", info.messageId)
+            return info
+        } catch (error) {
+            console.error("❌ Nodemailer SMTP service failed.")
+            console.error("📋 Error details:", {
+                message: error.message,
+                code: error.code,
+                command: error.command
+            })
+        }
+    }
+
+    // Option C: Absolute fallback to console logging
+    console.warn("⚠️ No active or functioning email transport is configured.")
+    console.log("\n==================================================")
+    console.log("⚠️  EMAIL DELIVERY FALLBACK LOG (NO EMAIL SENT)  ⚠️")
+    console.log(`Recipient: ${options.email}`)
+    console.log(`Subject:   ${options.subject}`)
+    console.log("--------------------------------------------------")
+    console.log("Plain text content:")
+    console.log(emailTextual)
+    console.log("==================================================\n")
+
+    return {
+        messageId: `mock_${Date.now()}`,
+        fallbackUsed: true,
+        recipient: options.email
     }
 }
 
