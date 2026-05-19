@@ -2,15 +2,23 @@ import os
 # Fix HuggingFace DNS issues (Errno 11001) by using the official mirror
 # THIS MUST BE BEFORE IMPORTS
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+# Force CPU-only execution and prevent CUDA driver libraries from loading into memory
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import fitz          # PyMuPDF
 import chromadb
-from sentence_transformers import SentenceTransformer, CrossEncoder
+from sentence_transformers import SentenceTransformer
 import hashlib
 import re
 import logging
+import torch
+
+# ── PyTorch RAM / CPU thread optimizations ──────────────────────────────────────
+# Restrict thread pools to 1 to avoid excessive stack allocations and virtual RAM inflation
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -24,14 +32,12 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# ── Embedding & Reranking Models ──────────────────────────────────────────────
-log.info("Loading sentence-transformers model (all-MiniLM-L6-v2)…")
-EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
-log.info("Loading cross-encoder reranker (ms-marco-MiniLM-L-6-v2)…")
-RERANK_MODEL = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-log.info("Models ready ✓")
+# ── Embedding Model (Lightweight & efficient) ─────────────────────────────────
+log.info("Loading sentence-transformers model (all-MiniLM-L6-v2) on CPU…")
+EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+log.info("Embedding model ready ✓")
 
-# ── Upgrade 1: Persistent ChromaDB client ────────────────────────────────────
+# ── Persistent ChromaDB Client ────────────────────────────────────────────────
 CHROMA_DB_PATH = os.path.join(os.path.dirname(__file__), "chroma_db")
 os.makedirs(CHROMA_DB_PATH, exist_ok=True)
 
@@ -52,21 +58,19 @@ def init_chroma():
 CHROMA_CLIENT = init_chroma()
 log.info("ChromaDB client initialized ✓")
 
-# ── Upgrade 5: Tuning constants ───────────────────────────────────────────────
+# ── Tuning Constants ──────────────────────────────────────────────────────────
 TOP_K          = 10     
-RERANK_POOL    = 30     # candidates to fetch before reranking
 MIN_CHUNK_CHARS = 300   
 MAX_CHUNK_CHARS = 1800  
 OVERLAP_WORDS   = 40    
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Upgrade 2: Better chunking — paragraph + sentence boundary aware
+# Chunking — paragraph + sentence boundary aware
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _split_sentences(text: str) -> list[str]:
     """Naïve but fast sentence splitter (avoids heavy NLTK dependency)."""
-    # Split on . ! ? followed by whitespace + capital letter or end-of-string
     parts = re.split(r'(?<=[.!?])\s+(?=[A-Z\d"\'])', text)
     return [p.strip() for p in parts if p.strip()]
 
@@ -99,20 +103,12 @@ def chunk_text_smart(
 ) -> list[dict]:
     """
     Paragraph-aware, sentence-boundary chunking.
-
-    Algorithm:
-      1. Iterate page blocks (natural paragraph boundaries).
-      2. If a block is small, merge with the next until ≥ min_chars.
-      3. If a block is large, split on sentence boundaries.
-      4. Prepend the last `overlap_words` words of the previous chunk
-         to the current chunk so context is not lost at boundaries.
-
     Returns a list of dicts:
       {
         "text"      : str,
         "chunk_id"  : int,
-        "page_hint" : int,   # page number of the first byte of this chunk
-        "char_start": int,   # approximate char offset in the full document
+        "page_hint" : int,
+        "char_start": int,
         "char_end"  : int,
         "word_count": int,
       }
@@ -131,7 +127,7 @@ def chunk_text_smart(
                 "text": para,
                 "char_start": char_cursor,
             })
-            char_cursor += len(para) + 2  # +2 for the double newline separator
+            char_cursor += len(para) + 2
 
     # ── Merge tiny blocks and split giant blocks on sentence boundaries ────────
     merged: list[dict] = []
@@ -158,16 +154,13 @@ def chunk_text_smart(
             buf_page  = page
             buf_start = start
         elif len(buf_text) + len(text) < max_chars:
-            buf_text  += "\n\n" + text   # merge small blocks
+            buf_text  += "\n\n" + text
         else:
-            # Current buffer is big enough — flush it
             flush(buf_text, buf_page, buf_start)
-            # Start new buffer with incoming block
             buf_text  = text
             buf_page  = page
             buf_start = start
 
-        # If accumulated buffer is too large, sentence-split and flush
         while len(buf_text) > max_chars:
             sentences = _split_sentences(buf_text)
             split_point = ""
@@ -182,7 +175,7 @@ def chunk_text_smart(
                     split_point += (" " if split_point else "") + sent
             buf_text = remainder if remainder != buf_text else split_point
             if buf_text == remainder:
-                break  # prevent infinite loop on unsplittable text
+                break
 
     flush(buf_text, buf_page, buf_start)
 
@@ -212,7 +205,7 @@ def chunk_text_smart(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ChromaDB: embed + store (with persistence & cache check)
+# ChromaDB: embed + store
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _pdf_hash(pdf_bytes: bytes) -> str:
@@ -221,11 +214,7 @@ def _pdf_hash(pdf_bytes: bytes) -> str:
 
 
 def embed_and_store(chunks: list[dict], collection_name: str) -> tuple[chromadb.Collection, bool]:
-    """
-    Embed chunk texts and store in the ChromaDB collection.
-    Uses get_or_create_collection for atomicity.
-    """
-    # Check if it exists first to report db_reused correctly
+    """Embed chunk texts and store in the ChromaDB collection."""
     existing_names = [c.name for c in CHROMA_CLIENT.list_collections()]
     db_reused = collection_name in existing_names
 
@@ -243,7 +232,10 @@ def embed_and_store(chunks: list[dict], collection_name: str) -> tuple[chromadb.
     metadatas  = [{k: v for k, v in c.items() if k != "text"} for c in chunks]
 
     log.info("Embedding %d chunks…", len(texts))
-    embeddings = EMBED_MODEL.encode(texts, show_progress_bar=False).tolist()
+    
+    # Disable PyTorch gradient tracking to save active memory
+    with torch.no_grad():
+        embeddings = EMBED_MODEL.encode(texts, show_progress_bar=False).tolist()
 
     collection.add(
         documents=texts,
@@ -256,16 +248,8 @@ def embed_and_store(chunks: list[dict], collection_name: str) -> tuple[chromadb.
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Upgrade 3: Better / multi-angle query
+# Similarity Retrieval
 # ══════════════════════════════════════════════════════════════════════════════
-
-DEFAULT_QUERIES = [
-    "project modules tasks features requirements",
-    "task priority High Medium Low blocking dependencies",
-    "system architecture backend frontend API database",
-    "user stories acceptance criteria functional requirements",
-]
-
 
 def retrieve(
     collection: chromadb.Collection,
@@ -273,71 +257,53 @@ def retrieve(
     k: int = TOP_K,
 ) -> list[dict]:
     """
-    Multi-angle retrieval + Reranking:
-    1. Issue several complementary queries.
-    2. Collect a larger pool of candidates (RERANK_POOL).
-    3. Use CrossEncoder to rerank candidates against the user query.
-    4. Return top-k.
+    ChromaDB similarity retrieval:
+    1. Embed user query (exactly once).
+    2. Query collection directly using cosine similarity.
+    3. Return top-k matches with correct metadata format.
     """
-    queries = list(DEFAULT_QUERIES)
-    primary_query = user_query.strip() if (user_query and user_query.strip()) else DEFAULT_QUERIES[0]
+    primary_query = user_query.strip() if (user_query and user_query.strip()) else "workflow tasks features"
     
-    if user_query and user_query.strip():
-        queries.insert(0, primary_query)
-
-    seen_ids: set[str] = set()
-    candidates: list[dict] = []
-
     n_available = collection.count()
-    # Fetch more than k to have a good pool for reranking
-    fetch_k = min(RERANK_POOL, n_available)
+    if n_available == 0:
+        return []
+        
+    fetch_k = min(k, n_available)
 
-    for q in queries:
-        emb = EMBED_MODEL.encode([q], show_progress_bar=False).tolist()
-        res = collection.query(
-            query_embeddings=emb,
-            n_results=fetch_k,
-            include=["documents", "metadatas", "distances"],
-        )
-        docs      = res["documents"][0]
-        metas     = res["metadatas"][0]
-        distances = res["distances"][0]
+    # Disable gradient tracking during embedding encoding to conserve RAM
+    with torch.no_grad():
+        emb = EMBED_MODEL.encode([primary_query], show_progress_bar=False).tolist()
 
-        for doc, meta, dist in zip(docs, metas, distances):
-            cid = str(meta.get("chunk_id", ""))
-            if cid not in seen_ids:
-                seen_ids.add(cid)
-                candidates.append({
-                    "text"      : doc,
-                    "chunk_id"  : meta.get("chunk_id"),
-                    "page_hint" : meta.get("page_hint"),
-                    "char_start": meta.get("char_start"),
-                    "char_end"  : meta.get("char_end"),
-                    "word_count": meta.get("word_count"),
-                    "initial_score": round(1.0 - dist, 4),
-                })
+    res = collection.query(
+        query_embeddings=emb,
+        n_results=fetch_k,
+        include=["documents", "metadatas", "distances"],
+    )
 
-    if not candidates:
+    if not res or not res.get("documents") or not res["documents"][0]:
         return []
 
-    # ── Upgrade: Reranking ────────────────────────────────────────────────────
-    log.info("Reranking %d candidates against: %r", len(candidates), primary_query[:50])
-    
-    # Prepare pairs for cross-encoder: (query, document)
-    pairs = [[primary_query, c["text"]] for c in candidates]
-    rerank_scores = RERANK_MODEL.predict(pairs)
+    docs      = res["documents"][0]
+    metas     = res["metadatas"][0]
+    distances = res["distances"][0]
 
-    for i, score in enumerate(rerank_scores):
-        candidates[i]["rerank_score"] = float(score)
+    candidates = []
+    for doc, meta, dist in zip(docs, metas, distances):
+        candidates.append({
+            "text"      : doc,
+            "chunk_id"  : meta.get("chunk_id"),
+            "page_hint" : meta.get("page_hint"),
+            "char_start": meta.get("char_start"),
+            "char_end"  : meta.get("char_end"),
+            "word_count": meta.get("word_count"),
+            "score"     : round(1.0 - dist, 4),  # Cosine similarity score
+        })
 
-    # Sort by rerank score descending
-    candidates.sort(key=lambda x: x["rerank_score"], reverse=True)
-    
-    return candidates[:k]
+    return candidates
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Route
+# Routes
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/rag", methods=["POST"])
@@ -358,7 +324,6 @@ def rag_endpoint():
     user_query = request.form.get("query") or None
 
     try:
-        # 1 ▸ Extract text page-by-page (preserves paragraph blocks)
         log.info("Extracting text from PDF…")
         pages = extract_text_with_pages(pdf_bytes)
         full_text = "\n\n".join(p["text"] for p in pages)
@@ -368,22 +333,19 @@ def rag_endpoint():
                 "error": "No extractable text found. The PDF may be image-only or corrupted."
             }), 422
 
-        # 2 ▸ Smart chunking
         chunks = chunk_text_smart(pages)
         log.info("Created %d smart chunks", len(chunks))
         if not chunks:
             return jsonify({"error": "Chunking produced no output"}), 422
 
-        # 3 ▸ Embed + store (persistent, hash-keyed)
         collection_name = _pdf_hash(pdf_bytes)
         collection, db_reused = embed_and_store(chunks, collection_name)
 
-        # 4 ▸ Multi-angle retrieval → returns list[dict] with metadata
         results = retrieve(collection, user_query, k=TOP_K)
         log.info("Retrieved %d chunks (db_reused=%s) ✓", len(results), db_reused)
 
         return jsonify({
-            "chunks"      : [r["text"]  for r in results],   # backward compat
+            "chunks"      : [r["text"]  for r in results],
             "chunk_meta"  : [{k: v for k, v in r.items() if k != "text"} for r in results],
             "text_snippet": full_text[:500] + ("…" if len(full_text) > 500 else ""),
             "total_chunks": len(chunks),
@@ -422,5 +384,6 @@ def clear_cache():
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    log.info("Starting RAG service on http://localhost:5001  (TOP_K=%d, RERANK=ON)", TOP_K)
-    app.run(host="0.0.0.0", port=5001, debug=False)
+    port = int(os.environ.get("PORT", 5001))
+    log.info("Starting optimized RAG service on port %d (TOP_K=%d, CPU-ONLY)", port, TOP_K)
+    app.run(host="0.0.0.0", port=port, debug=False)
