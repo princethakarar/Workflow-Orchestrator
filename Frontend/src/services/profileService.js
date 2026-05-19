@@ -1,23 +1,10 @@
-import axios from 'axios';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-const AUTH_URL = `${API_BASE}/api/v1/auth`;
-const PROJECTS_URL = `${API_BASE}/api/projects`;
-
-const getAuthHeaders = () => {
-    const token = localStorage.getItem('accessToken');
-    return token ? { Authorization: `Bearer ${token}` } : {};
-};
+import api from './api';
 
 /**
  * Fetch the fully-populated current user (including avatar, currentProjects)
  */
 export const fetchCurrentUser = async () => {
-    const res = await axios.post(
-        `${AUTH_URL}/current-user`,
-        {},
-        { headers: getAuthHeaders(), withCredentials: true }
-    );
+    const res = await api.post('/api/v1/auth/current-user', {});
     return res.data.data; // returns user object
 };
 
@@ -28,14 +15,9 @@ export const fetchCurrentUser = async () => {
 export const uploadAvatar = async (file) => {
     const formData = new FormData();
     formData.append('avatar', file);
-    const res = await axios.post(
-        `${AUTH_URL}/upload-avatar`,
-        formData,
-        {
-            headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' },
-            withCredentials: true,
-        }
-    );
+    const res = await api.post('/api/v1/auth/upload-avatar', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return res.data.data; // { user, avatarUrl }
 };
 
@@ -45,11 +27,7 @@ export const uploadAvatar = async (file) => {
  * @param {string} newPassword
  */
 export const changePassword = async (oldPassword, newPassword) => {
-    const res = await axios.post(
-        `${AUTH_URL}/change-password`,
-        { oldPassword, newPassword },
-        { headers: getAuthHeaders(), withCredentials: true }
-    );
+    const res = await api.post('/api/v1/auth/change-password', { oldPassword, newPassword });
     return res.data;
 };
 
@@ -62,10 +40,7 @@ export const changePassword = async (oldPassword, newPassword) => {
  */
 export const fetchMyProjects = async () => {
     try {
-        const res = await axios.get(
-            PROJECTS_URL,
-            { headers: getAuthHeaders(), withCredentials: true }
-        );
+        const res = await api.get('/api/projects');
         const data = res.data.data;
         return Array.isArray(data) ? data : [];
     } catch (err) {
