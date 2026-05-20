@@ -454,7 +454,7 @@ Create a `.env` file in the `Backend` directory containing the following:
 
 ---
 
-<p align="center">
+<!-- <p align="center">
   Made with ❤️ by <b>Prince</b>
 </p>
-
+ -->

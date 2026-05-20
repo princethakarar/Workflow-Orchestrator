@@ -306,6 +306,7 @@ def retrieve(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/rag", methods=["POST"])
+@app.route("/", methods=["POST"])
 def rag_endpoint():
     """
     Expects multipart/form-data:

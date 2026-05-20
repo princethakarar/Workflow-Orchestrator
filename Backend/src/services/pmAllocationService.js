@@ -1,4 +1,5 @@
 import { User } from "../models/userModel.js";
+import { Project } from "../models/projectModel.js";
 
 /**
  * Mapping of specializations to related keywords for scoring.
@@ -22,15 +23,32 @@ const SPECIALIZATION_KEYWORDS = {
 export const findBestProjectManager = async (projectData) => {
     const { name, description, tasks = [] } = projectData;
 
-    // 1. Fetch all available project managers who are not currently managing any project
-    // We look for users with role 'projectManager' and status 'available'
-    const availablePMs = await User.find({
+    // 1. Fetch all project managers who are not inactive
+    const allPMs = await User.find({
         role: 'projectManager',
-        status: 'available',
-        currentProjects: { $size: 0 }
+        status: { $ne: 'inactive' }
     });
 
-    if (!availablePMs || availablePMs.length === 0) {
+    if (!allPMs || allPMs.length === 0) {
+        return null;
+    }
+
+    // 2. Query the Project collection to find PMs currently managing active projects
+    //    This is the reliable source of truth (same approach as getAvailableDevelopers)
+    const activeProjects = await Project.find({
+        status: { $nin: ['completed', 'cancelled'] }
+    }).select('manager');
+
+    const busyPMIds = new Set(
+        activeProjects.map(p => p.manager?.toString()).filter(Boolean)
+    );
+
+    // 3. Filter to truly available PMs
+    const availablePMs = allPMs.filter(
+        pm => !busyPMIds.has(pm._id.toString())
+    );
+
+    if (availablePMs.length === 0) {
         return null;
     }
 
