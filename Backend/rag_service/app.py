@@ -31,6 +31,11 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
+@app.route("/health")
+def health_check():
+    from datetime import datetime
+    return {"status": "ok", "service": "rag", "timestamp": datetime.utcnow().isoformat()}
+
 # ── Embedding Model (Lightweight & efficient) ─────────────────────────────────
 log.info("Loading sentence-transformers model (all-MiniLM-L6-v2) on CPU…")
 EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")

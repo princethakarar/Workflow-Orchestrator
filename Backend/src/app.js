@@ -60,6 +60,10 @@ app.use("/api/analytics", analyticsRouter); // Analytics routes
 app.use("/api/webhooks", webhookRouter); // GitHub webhook routes
 app.use("/api/ai", aiRouter); // AI model routes
 
+app.get("/health", (req, res) => {
+    res.status(200).json({ status: "ok", service: "backend", timestamp: new Date().toISOString() });
+});
+
 app.get("/", (req, res) => {
     res.send("Welcome to Homepage")
 });
