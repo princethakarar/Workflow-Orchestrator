@@ -5,7 +5,8 @@ import { User } from "../models/userModel.js"
 import { Invitation } from "../models/invitationModel.js"
 import { Project } from "../models/projectModel.js"
 import { generateSecurePassword } from "../utils/passwordGenerator.js"
-import { sendEmail, teamInvitationMailgenContent } from "../utils/mail.js"
+import { sendEmail } from "../utils/mail.js"
+import { getTeamInvitationHtml } from "../templates/emails/teamInvitation.js"
 import mongoose from "mongoose"
 
 /**
@@ -88,9 +89,9 @@ export const inviteMember = asyncHandler(async (req, res) => {
     // Send invitation email (non-blocking)
     try {
         await sendEmail({
-            email: email.toLowerCase(),
+            to: email.toLowerCase(),
             subject: "Welcome to WorkFlow Orchestrator - Set Your Password",
-            mailgenContent: teamInvitationMailgenContent(name, email.toLowerCase(), role, specialization || 'Full Stack', setPasswordLink)
+            htmlContent: getTeamInvitationHtml(name, email.toLowerCase(), role, specialization || 'Full Stack', setPasswordLink)
         })
     } catch (error) {
         console.error("Email sending failed:", error)
@@ -462,9 +463,9 @@ export const resendInvitation = asyncHandler(async (req, res) => {
     // Send invitation email
     try {
         await sendEmail({
-            email: user.email,
+            to: user.email,
             subject: "Reminder: Set Your Password - WorkFlow Orchestrator",
-            mailgenContent: teamInvitationMailgenContent(user.fullName, user.email, user.role, user.specialization || 'Full Stack', setPasswordLink)
+            htmlContent: getTeamInvitationHtml(user.fullName, user.email, user.role, user.specialization || 'Full Stack', setPasswordLink)
         })
     } catch (error) {
         console.error("Email sending failed:", error)

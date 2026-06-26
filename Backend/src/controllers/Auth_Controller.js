@@ -3,7 +3,9 @@ import { PendingUser } from "../models/pendingUserModel.js"
 import { ApiResponse } from "../utils/api-response.js"
 import { ApiError } from "../utils/api-error.js"
 import { asyncHandler } from "../utils/async-handler.js"
-import { emailVerificationMailgenContent, forgotPasswordMailgenContent, sendEmail } from "../utils/mail.js"
+import { sendEmail } from "../utils/mail.js"
+import { getVerifyEmailHtml } from "../templates/emails/verifyEmail.js"
+import { getResetPasswordHtml } from "../templates/emails/resetPassword.js"
 import jwt from "jsonwebtoken"
 import crypto from "crypto";
 
@@ -114,12 +116,9 @@ const registerUser = asyncHandler(async (req, res) => {
     })
 
     await sendEmail({
-        email,
+        to: email,
         subject: "Please verify your email",
-        mailgenContent: emailVerificationMailgenContent(
-            username,
-            unHashedOTP
-        )
+        htmlContent: getVerifyEmailHtml(username, unHashedOTP)
     })
 
     return res
@@ -297,12 +296,9 @@ const resendEmailVerification = asyncHandler(async (req, res) => {
         console.log("Pending user updated with new OTP")
 
         await sendEmail({
-            email: pendingUser.email,
-            subject: "Please verify your email (Resend)",
-            mailgenContent: emailVerificationMailgenContent(
-                pendingUser.username,
-                unHashedOTP
-            )
+            to: pendingUser.email,
+            subject: "Please verify your email",
+            htmlContent: getVerifyEmailHtml(pendingUser.username, unHashedOTP)
         })
         console.log("Email sent successfully")
 
@@ -378,12 +374,9 @@ const forgotPasswordRequest = asyncHandler(async (req, res) => {
     await user.save({ validateBeforeSave: false })
 
     await sendEmail({
-        email: user?.email,
+        to: user.email,
         subject: `Workflow Orchestrator — Password Reset OTP for ${user.username}`,
-        mailgenContent: forgotPasswordMailgenContent(
-            user.fullName || user.username || 'User',
-            unHashedOTP
-        )
+        htmlContent: getResetPasswordHtml(user.fullName || user.username || 'User', unHashedOTP)
     })
 
     return res
