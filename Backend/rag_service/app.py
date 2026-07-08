@@ -31,10 +31,7 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-@app.route("/health")
-def health_check():
-    from datetime import datetime
-    return {"status": "ok", "service": "rag", "timestamp": datetime.utcnow().isoformat()}
+
 
 # ── Embedding Model (Lightweight & efficient) ─────────────────────────────────
 log.info("Loading sentence-transformers model (all-MiniLM-L6-v2) on CPU…")
@@ -364,13 +361,19 @@ def rag_endpoint():
 
 @app.route("/health", methods=["GET"])
 def health():
-    collections = [c.name for c in CHROMA_CLIENT.list_collections()]
+    try:
+        collections = CHROMA_CLIENT.list_collections()
+        num_collections = len(collections)
+    except Exception as e:
+        log.error(f"Error in health check: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+        
     return jsonify({
         "status"      : "ok",
         "model"       : "all-MiniLM-L6-v2",
         "top_k"       : TOP_K,
         "db_path"     : CHROMA_DB_PATH,
-        "collections" : len(collections),
+        "collections" : num_collections,
     })
 
 
