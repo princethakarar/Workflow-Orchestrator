@@ -34,12 +34,23 @@ const allowedOrigins = [
         .filter(Boolean))
 ]
 
+// DevPilot preview support: WebContainer serves each preview session from a
+// fresh random subdomain under *.webcontainer-api.io, so a fixed allowlist
+// entry can't cover it. Match the whole domain instead of listing origins.
+const isWebContainerPreviewOrigin = (origin) => {
+    try {
+        return new URL(origin).hostname.endsWith(".webcontainer-api.io")
+    } catch {
+        return false
+    }
+}
+
 app.use(cors({
     origin: (origin, callback) => {
         // Non-browser requests often have no Origin header.
         if (!origin) return callback(null, true)
 
-        if (allowedOrigins.includes(origin)) {
+        if (allowedOrigins.includes(origin) || isWebContainerPreviewOrigin(origin)) {
             return callback(null, true)
         }
         return callback(new Error(`Not allowed by CORS: ${origin}`))
