@@ -14,5 +14,31 @@ torch==2.12.0+cpu
 sentence-transformers==2.7.0
 flask
 flask-cors
-chromadb
 pymupdf
+
+# Pinned: the on-disk chroma_db/ store was written under 1.5.9's schema, and
+# langchain-chroma only constrains it to >=1.3.5,<2.0.0 — wide enough to drift
+# into a schema change on a rebuild.
+chromadb==1.5.9
+
+# Production WSGI server (see Dockerfile CMD). Resolved from PyPI via the
+# --extra-index-url above; the torch CPU index does not carry it.
+gunicorn
+
+# ── LangChain ─────────────────────────────────────────────────────────────────
+# The bare `langchain` umbrella package is deliberately NOT included: an LCEL
+# chain (prompt | llm) needs only langchain-core, and the umbrella adds weight
+# this free-tier instance cannot spare.
+#
+# langchain-huggingface is pinned to 1.0.0, NOT latest. 1.2.2 declares
+# sentence-transformers>=5.2.0 / transformers>=5.0.0, which would force a major
+# upgrade of the embedding stack out from under the frozen baseline in
+# validation/. 1.0.0 declares sentence-transformers>=2.6.0,<3.0.0 and
+# transformers>=4.39.0,<5.0.0 — an exact fit for the pins above.
+langchain-core==1.5.3
+langchain-chroma==1.1.0
+langchain-groq==1.1.3
+langchain-huggingface==1.0.0
+
+# Local-dev config loading for the RAG service (Render sets env vars directly).
+python-dotenv

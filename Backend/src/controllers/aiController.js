@@ -4,22 +4,23 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
-import Groq from "groq-sdk";
+import {
+    getRagEndpoint,
+    getRagAuthHeaders,
+    RAG_REQUEST_TIMEOUT_MS,
+} from "../config/ragConfig.js";
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 
 // ── RAG service config ──────────────────────────────────────────────────────
-let RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || "http://127.0.0.1:5001/rag";
-
-// Ensure the URL ends with /rag (handles cases where only the base domain is provided)
-if (RAG_SERVICE_URL && !RAG_SERVICE_URL.endsWith("/rag")) {
-    RAG_SERVICE_URL = RAG_SERVICE_URL.replace(/\/$/, "") + "/rag";
-}
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
+// URL normalisation and auth headers live in ../config/ragConfig.js so this
+// controller and the startup warm-up ping cannot drift apart.
+//
+// Prompt construction and the Groq call now live in the Python RAG service
+// (rag_service/app.py) as an LCEL chain. This controller still owns the team
+// context (it needs Mongo), response validation and dataset logging.
 /**
  * validateLlmResponse
  * Basic schema validation for the AI response.
@@ -65,12 +66,14 @@ async function logToDataset(context, query, response) {
 
 /**
  * callRagService
- * Sends the PDF buffer to the Python RAG microservice.
- * Returns { chunks: string[], text_snippet: string, total_chunks: number }
+ * Sends the PDF buffer to the Python RAG microservice, which now also builds the
+ * prompt and calls Groq.
+ * Returns { chunks, chunk_meta, text_snippet, total_chunks, db_reused,
+ *           context, response }
  *
  * Uses Node 18+ native globals: FormData, Blob, fetch (no extra deps needed).
  */
-async function callRagService(fileBuffer, filename, query) {
+async function callRagService(fileBuffer, filename, query, teamContextString) {
     // Node 18+ has FormData, Blob, and fetch as globals.
     const formData = new FormData();
 
@@ -78,12 +81,37 @@ async function callRagService(fileBuffer, filename, query) {
     const blob = new Blob([fileBuffer], { type: "application/pdf" });
     formData.append("file", blob, filename || "upload.pdf");
     formData.append("query", query || "Generate tasks from this project document");
+    // Computed here because it needs Mongo; passed through to Python unchanged.
+    formData.append("teamContextString", teamContextString || "");
 
-    const response = await fetch(RAG_SERVICE_URL, {
-        method: "POST",
-        body: formData,
-        // Do NOT set Content-Type manually — fetch adds the correct multipart boundary.
-    });
+    let response;
+    try {
+        response = await fetch(getRagEndpoint(), {
+            method: "POST",
+            body: formData,
+            // Only the auth header — do NOT set Content-Type manually, fetch adds
+            // the correct multipart boundary.
+            headers: getRagAuthHeaders(),
+            // Without this the request hangs indefinitely when the RAG instance
+            // is wedged, holding the Express handler open with it.
+            signal: AbortSignal.timeout(RAG_REQUEST_TIMEOUT_MS),
+        });
+    } catch (err) {
+        if (err?.name === "TimeoutError" || err?.name === "AbortError") {
+            const timeoutErr = new Error(
+                `RAG service did not respond within ${RAG_REQUEST_TIMEOUT_MS / 1000}s`
+            );
+            timeoutErr.isTimeout = true;
+            throw timeoutErr;
+        }
+        throw err;
+    }
+
+    if (response.status === 401) {
+        const authErr = new Error("RAG service rejected the shared secret");
+        authErr.isAuthFailure = true;
+        throw authErr;
+    }
 
     if (!response.ok) {
         const errText = await response.text();
@@ -105,32 +133,10 @@ export const uploadAndProcessPdf = async (req, res, next) => {
 
         const dataBuffer = req.file.buffer;
         const query = req.body.prompt || "Generate modules, tasks, subtasks, priority, and dependencies";
-        const model = req.body.model || "llama3.2";
-        // ── Step 1: RAG retrieval ──────────────────────────────────────────
-        let ragResult;
-        try {
-            ragResult = await callRagService(dataBuffer, req.file.originalname, query);
-        } catch (ragErr) {
-            return res.status(502).json({
-                success: false,
-                message: "Failed to communicate with the RAG microservice.",
-                details: ragErr.message,
-                hint: "Check if the RAG service URL is correct and the service is healthy."
-            });
-        }
 
-        const { chunks, text_snippet, total_chunks } = ragResult;
-
-        if (!chunks || chunks.length === 0) {
-            return res.status(422).json({
-                success: false,
-                message:
-                    "The RAG service could not extract useful text from the PDF. " +
-                    "The file may be image-only or corrupted.",
-            });
-        }
-
-        // ── Step 2: Team context (unchanged from original) ────────────────
+        // ── Step 1: Team context (unchanged — stays in Node, it needs Mongo) ──
+        // Computed before the RAG call now, because it is sent to the Python
+        // service as part of the request rather than injected into a local prompt.
         let teamContextString = "No specific team context provided. Do not invent users.";
         const projectId = req.body.projectId;
         let teamData = [];
@@ -166,102 +172,60 @@ export const uploadAndProcessPdf = async (req, res, next) => {
             }
         }
 
-        // ── Step 3: Build structured tech-lead prompt ────────────────────
-        // Join retrieved chunks as the context block
-        const ragContext = chunks.join("\n\n---\n\n");
+        // ── Step 2: RAG retrieval + prompt + LLM (all in the Python service) ──
+        let ragResult;
+        try {
+            ragResult = await callRagService(
+                dataBuffer,
+                req.file.originalname,
+                query,
+                teamContextString
+            );
+        } catch (ragErr) {
+            let message = "Failed to communicate with the RAG microservice.";
+            let hint = "Check if the RAG service URL is correct and the service is healthy.";
 
-        const systemPrompt = `You are a senior tech lead and software architect planning a real product build.
+            if (ragErr.isTimeout) {
+                message = "The RAG microservice timed out.";
+                hint = "It may be cold-starting on Render (model load can take ~60s). Please retry in a moment.";
+            } else if (ragErr.isAuthFailure) {
+                message = "The RAG microservice rejected this request.";
+                hint = "RAG_SHARED_SECRET does not match between the backend and the RAG service.";
+            }
 
-Your job: analyse the CONTEXT below and produce a structured, modular execution plan.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STRICT RULES — VIOLATING ANY RULE IS A FAILURE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. GROUP tasks into functional MODULES (e.g. Authentication, Backend API, Task Management, UI, DevOps).
-2. Every task MUST have a minimum of 3 concrete subtasks — never return an empty array.
-3. PRIORITY logic is MANDATORY — not all tasks can be the same priority:
-   • "High"   → blocking core features (auth, data layer, critical backend)
-   • "Medium" → important but non-blocking (dashboards, UI enhancements)
-   • "Low"    → optional or polish features
-4. DEPENDENCY logic — use exact task names, not IDs:
-   • Authentication tasks come before any protected feature
-   • Data/backend layer before dashboards or analytics
-   • State management before UI rendering
-   • Real-time features depend on backend readiness
-5. DO NOT generate deadlines — omit the field entirely.
-6. DO NOT use the word "unspecified" anywhere in the output.
-7. DO NOT return empty arrays for subtasks or dependencies.
-   If a task has no dependencies, use an empty array [].
-8. DEDUPLICATE — merge semantically overlapping tasks before output.
-9. Assign "assignedTo" using EXACT user IDs from TEAM_CONTEXT below.
-   If no team context exists, omit the "assignedTo" field.
-10. Output ONLY raw JSON — no explanation, no markdown, no extra text.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-VALIDATION — CHECK BEFORE RETURNING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Every task has at least 3 subtasks ✓
-• Priorities are distributed across High / Medium / Low ✓
-• Dependencies reference valid task names ✓
-• No duplicate or semantically overlapping tasks ✓
-• No "unspecified" anywhere ✓
-• No deadlines ✓
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-OUTPUT FORMAT (strict JSON only)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{
-  "project_name": "name extracted from document",
-  "project_summary": "one-paragraph summary of what is being built",
-  "modules": [
-    {
-      "name": "Module Name",
-      "module_description": "What this module covers",
-      "tasks": [
-        {
-          "task": "Exact task name",
-          "description": "Clear description of what needs to be done",
-          "subtasks": [
-            "Step 1 — specific actionable step",
-            "Step 2 — specific actionable step",
-            "Step 3 — specific actionable step"
-          ],
-          "priority": "High | Medium | Low",
-          "dependencies": ["Exact task name this depends on"],
-          "estimated_complexity": "Low | Medium | High",
-          "suggested_role": "Frontend | Backend | Fullstack | DevOps",
-          "assignedTo": "User ID from TEAM_CONTEXT (omit if no team)"
+            return res.status(502).json({
+                success: false,
+                message,
+                details: ragErr.message,
+                hint,
+            });
         }
-      ]
-    }
-  ]
-}
-Return ONLY valid JSON.
-No explanation.
-No markdown.
 
-${teamContextString}
+        // `context` is the retrieved-chunk block assembled by the Python service
+        // (identical to the string Node used to build by joining chunks with a
+        // blank-line/---/blank-line separator), and `response` is the raw Groq
+        // completion text.
+        const {
+            chunks,
+            text_snippet,
+            total_chunks,
+            context: ragContext,
+            response: rawAiResponse,
+        } = ragResult;
 
-CONTEXT (retrieved from ${total_chunks} total document chunks via semantic search):
-${ragContext}
+        if (!chunks || chunks.length === 0) {
+            return res.status(422).json({
+                success: false,
+                message:
+                    "The RAG service could not extract useful text from the PDF. " +
+                    "The file may be image-only or corrupted.",
+            });
+        }
 
-${query ? "ADDITIONAL FOCUS:\n" + query : ""}
-`;
-
-// ── Step 4: Call Ollama ───────────────────────────────────────────
-    // ── Step 4: Call Groq ───────────────────────────────────────────
-const completion = await groq.chat.completions.create({
-  model: "llama-3.3-70b-versatile",
-  messages: [
-    {
-      role: "system",
-      content: systemPrompt,
-    },
-  ],
-  temperature: 0.2,
-});
-
-const rawAiResponse = completion.choices[0].message.content;
+        // Prompt construction and the Groq call now happen inside the Python
+        // RAG service (rag_service/app.py) as an LCEL chain: prompt | ChatGroq.
+        // Everything below — fence stripping, validation, dataset logging and
+        // both response shapes — is unchanged, just sourced from ragResult.
 
 // ── Step 5: Validation & Parsing ────────────────────────────────
 let parsedJson = null;
