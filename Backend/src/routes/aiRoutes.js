@@ -1,6 +1,8 @@
 import { Router } from "express";
 import multer from "multer";
 import { uploadAndProcessPdf } from "../controllers/aiController.js";
+import { verifyJWT } from "../middlewares/auth_middleware.js";
+import { apiLimiter } from "../middlewares/rateLimiter.js";
 
 const router = Router();
 
@@ -25,6 +27,16 @@ const upload = multer({
 });
 
 // Route for processing PDF (requires a file to be sent with the form-data key "file")
-router.post("/process-pdf", upload.single("file"), uploadAndProcessPdf);
+//
+// Middleware order is deliberate: authenticate and rate-limit BEFORE multer, so
+// an unauthenticated or throttled request is rejected without buffering a 10 MB
+// upload into memory or reaching the (paid) Groq call downstream.
+router.post(
+    "/process-pdf",
+    verifyJWT,
+    apiLimiter,
+    upload.single("file"),
+    uploadAndProcessPdf
+);
 
 export default router;

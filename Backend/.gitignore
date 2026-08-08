@@ -1,2 +1,11 @@
 node_modules
 .env
+
+# RAG microservice
+# The vector store is a rebuildable cache, not source. Render's free-tier
+# filesystem is ephemeral so it resets on every deploy regardless; committing it
+# only baked stale collections into the image and produced binary diffs on every
+# local run. The frozen baseline lives in rag_service/validation/ instead.
+rag_service/chroma_db/
+rag_service/venv/
+rag_service/__pycache__/
