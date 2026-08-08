@@ -196,7 +196,13 @@ GROQ_MAX_TOKENS = 8192
 # fetch aborts at 120s and gunicorn kills the worker at 120s, and this call is
 # only the last stage of extract → chunk → embed → retrieve → generate.
 GROQ_TIMEOUT_SECONDS = 60
-GROQ_MAX_RETRIES = 2
+
+# No SDK-level retries. With request_timeout=60 and max_retries=2, a single slow
+# generation could consume up to ~180s — past both the gunicorn worker timeout
+# and the Node client's AbortSignal, so the caller would be gone before the
+# retries finished. Failures are surfaced immediately instead; aiController.js
+# maps them to a 502 with a "retry in a moment" hint.
+GROQ_MAX_RETRIES = 0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
