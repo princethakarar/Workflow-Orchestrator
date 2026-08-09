@@ -3,13 +3,14 @@ import { Task } from "../models/Task.js";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import dotenv from "dotenv";
 import {
     getRagEndpoint,
     getRagAuthHeaders,
     RAG_REQUEST_TIMEOUT_MS,
 } from "../config/ragConfig.js";
-dotenv.config();
+// No dotenv here: src/loadEnv.js is imported first in index.js and owns the
+// single canonical dotenv.config() call. No Groq client either — prompt
+// construction and generation moved into the Python RAG service.
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
