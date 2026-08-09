@@ -48,6 +48,13 @@ services:
         sync: false
       - key: RAG_SERVICE_URL
         sync: false
+      # Must match RAG_SHARED_SECRET on the (separately configured) RAG service.
+      # Set it here first: the RAG service ignores the header until it has the
+      # same value, so there is no outage window.
+      - key: RAG_SHARED_SECRET
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
 
   # Frontend Static Site
   - type: web
