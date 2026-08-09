@@ -12,6 +12,9 @@ export const ThemeProvider = ({ children }) => {
     });
 
     // Apply/remove class on <body> whenever isDark changes
+    // NOTE: the initial value is also applied by the inline script in index.html,
+    // which runs before first paint to avoid a light->dark flash. Keep STORAGE_KEY
+    // and the "dark unless explicitly light" rule in sync with it.
     useEffect(() => {
         const body = document.documentElement; // apply on <html> so CSS vars cascade everywhere
         if (isDark) {
@@ -19,6 +22,9 @@ export const ThemeProvider = ({ children }) => {
         } else {
             body.classList.remove('dark');
         }
+        // Keep native widgets (scrollbars, form controls) matching after a toggle,
+        // not just on the initial paint.
+        body.style.colorScheme = isDark ? 'dark' : 'light';
         localStorage.setItem(STORAGE_KEY, isDark ? 'dark' : 'light');
     }, [isDark]);
 

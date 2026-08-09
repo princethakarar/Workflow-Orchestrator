@@ -3,13 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Applies the theme BEFORE first paint. Without this the browser paints
+      // :root (light), React mounts, ThemeProvider adds .dark, and the 0.25s
+      // background transition on <body> animates a visible light->dark flash.
+      // Keep the storage key and the "dark unless explicitly light" rule in sync
+      // with src/context/ThemeContext.jsx.
+      (function () {
+        var isDark = true; // dark is the default
+        try {
+          isDark = localStorage.getItem('wf-theme') !== 'light';
+        } catch (e) { /* storage blocked -> keep the default */ }
+
+        if (isDark) document.documentElement.classList.add('dark');
+        // Also drives the browser's own canvas and native widgets (scrollbars,
+        // form controls) so they are correct on the very first frame too. Set
+        // here rather than as a static <meta> so an explicit light preference
+        // does not get the same flash in reverse.
+        document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/workflow-orchestrator-icon.svg" />
     <link rel="apple-touch-icon" href="/workflow-orchestrator-icon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <title>Workflow Orchestrator</title>
-    <script type="module" crossorigin src="/assets/index-i445t59Q.js"></script>
+    <script type="module" crossorigin src="/assets/index-CrBapRwr.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-DV_uKjIw.css">
   </head>
   <body>

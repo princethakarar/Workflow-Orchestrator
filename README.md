@@ -7,6 +7,7 @@
   <img src="https://img.shields.io/badge/Express-5.x-000000?style=for-the-badge&logo=express&logoColor=white" alt="Express Version" />
   <img src="https://img.shields.io/badge/MongoDB-Mongoose_9-47A248?style=for-the-badge&logo=mongodb&logoColor=white" alt="MongoDB Version" />
   <img src="https://img.shields.io/badge/Python_RAG-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python Version" />
+  <img src="https://img.shields.io/badge/LangChain-LCEL-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white" alt="LangChain" />
   <img src="https://img.shields.io/badge/ChromaDB-Vector_Store-FF6F61?style=for-the-badge&logo=databricks&logoColor=white" alt="ChromaDB" />
   <img src="https://img.shields.io/badge/Groq_LLM-Llama_3.3_70B-F3A530?style=for-the-badge&logo=meta&logoColor=white" alt="Groq" />
 <p align="center">
@@ -15,7 +16,7 @@
 
 ---
 
-### *"A comprehensive, role-based project orchestrator featuring dynamic visual task dependency designs, a local Python SentenceTransformers + ChromaDB RAG parsing microservice, and native bidirectional GitHub Issue synchronization."*
+### *"A comprehensive, role-based project orchestrator featuring dynamic visual task dependency designs, a local Python LangChain + ChromaDB RAG microservice, and native bidirectional GitHub Issue synchronization."*
 
 `Workflow Orchestrator` is an enterprise-grade project management application designed to bridge the gap between architectural plans and developer execution. Managers can drag-and-drop task dependency nodes in real-time, invite developers via a secure role-based invitation flow, upload raw project requirements PDFs for automatic vector search & LLM-driven task structure mapping, and keep everything in sync with GitHub issues natively.
 
@@ -48,7 +49,7 @@ Click on the tabs below to expand high-fidelity visual representations of the ap
 
 ![Local Python RAG Document Parser & AI Generator](./screenshots/rag-analyzer.png)
 
-*The automated task extraction flow. PDF documents are sent to the local Python microservice, vectorized, queried, and combined with current database team capacity contexts. The final payload is compiled and sent to Groq's high-speed API to produce a perfectly structured JSON task plan.*
+*The automated task extraction flow. PDF documents are sent to the local Python microservice, chunked, vectorized and queried through LangChain, then combined with current database team capacity contexts. An LCEL chain compiles the prompt and calls Groq's high-speed API to produce a perfectly structured JSON task plan.*
 
 </details>
 
@@ -90,30 +91,34 @@ sequenceDiagram
     actor Manager as Project Manager
     participant FE as Frontend App (React Flow)
     participant BE as Backend Server (Express)
-    participant RAG as RAG Service (Flask + ChromaDB)
+    participant RAG as RAG Service (Flask + LangChain + ChromaDB)
     participant Groq as AI Service (Groq Llama 3.3)
     participant DB as Database (MongoDB)
 
     Manager->>FE: Upload Project Requirements Document (PDF)
-    FE->>BE: POST /api/ai/upload (Multipart PDF)
+    FE->>BE: POST /api/ai/process-pdf (Multipart PDF, JWT required)
     activate BE
-    BE->>RAG: POST /rag (Sends PDF Buffer + Query)
-    activate RAG
-    Note over RAG: PyMuPDF extracts text.<br/>Sentence Transformers convert to embeddings.<br/>Query retrieves semantic chunks from ChromaDB.
-    RAG-->>BE: Return Context Chunks & Snippets
-    deactivate RAG
     BE->>DB: Query Team Members & Availability
-    DB-->>BE: Return Specializations & Task Counts
-    Note over BE: Compiles Prompt containing Context Chunks,<br/>Team availability structure, and strict JSON rules.
-    BE->>Groq: ChatCompletion (Llama 3.3 70B Model)
+    DB-->>BE: Return Specializations & Active Task Counts
+    Note over BE: Builds TEAM_CONTEXT string.<br/>Mongo access stays in Node — Python never touches the database.
+    BE->>RAG: POST /rag (PDF Buffer + Query + TEAM_CONTEXT)<br/>header: X-RAG-Secret
+    activate RAG
+    Note over RAG: PyMuPDF extracts text → paragraph/sentence chunker →<br/>LangChain Documents → HuggingFaceEmbeddings (all-MiniLM-L6-v2) →<br/>Chroma collection per document (cosine) → top-k similarity retrieval.
+    RAG->>Groq: LCEL chain (prompt → ChatGroq), Llama 3.3 70B, JSON mode
     activate Groq
-    Groq-->>BE: Return Valid Structured JSON
+    Groq-->>RAG: Return Structured JSON Plan
     deactivate Groq
-    Note over BE: Validates JSON structure.<br/>Saves project, modules, tasks, and visual node/edge coordinates.
+    RAG-->>BE: Returns context, response, chunks,<br/>chunk_meta, total_chunks, db_reused
+    deactivate RAG
+    Note over BE: Strips markdown fences, validates JSON schema,<br/>logs (context, query, response) to the fine-tuning dataset.
     BE-->>FE: Return Generated Project Workflow & Task Nodes
     deactivate BE
     FE-->>Manager: Render Interactive Drag-and-Drop Workflow Canvas
 ```
+
+> **Note on the split:** retrieval *and* generation both live in the Python service — the
+> LCEL chain owns the prompt, so Express never calls Groq directly. Team context is the
+> one exception: it needs MongoDB, so Node computes it and passes it through as a string.
 
 ---
 
@@ -127,9 +132,12 @@ sequenceDiagram
 *   **Visual Node Canvas**: Real-time dependency drag-and-drop editor utilizing `@xyflow/react` and `dnd-kit` to trace dependencies.
 *   **Multiplayer Collision & Sync**: Synchronized room-based updates via `socket.io-client` preventing overriding and tracking user movements instantly.
 
-### 📄 AI-Driven Architecture Analysis (RAG)
-*   **Local Vector Embeddings**: Python-based microservice uses `sentence-transformers` (`all-MiniLM-L6-v2`) and local `ChromaDB` instances to index parsed PDFs.
-*   **Dynamic LLM Generation**: Express backend connects with `Groq` using Llama 3.3 to construct high-fidelity JSON arrays complete with module definitions, estimated complexity, required specializations, and priority hierarchies.
+### 📄 AI-Driven Architecture Analysis (RAG on LangChain)
+*   **LangChain Pipeline**: The Python microservice runs the full retrieval-and-generation chain on LangChain — `langchain-huggingface` embeddings, `langchain-chroma` for the vector store, and an LCEL chain (`prompt | ChatGroq`) for generation. Deliberately *not* a canned `RetrievalQA` chain, whose default prompt would silently override the hand-tuned rules block.
+*   **Local Vector Embeddings**: `HuggingFaceEmbeddings` wrapping `sentence-transformers` (`all-MiniLM-L6-v2`, 384-dim) on CPU, indexed into one local `ChromaDB` collection per document, keyed by SHA-256 of the PDF bytes so re-uploading the same file skips re-embedding entirely.
+*   **Content-Aware Chunking**: A custom paragraph- and sentence-boundary chunker (not a generic character splitter) emits LangChain `Document`s carrying page and character-offset metadata, with overlap budgeted *before* the size ceiling so no chunk overruns it.
+*   **Dynamic LLM Generation**: `ChatGroq` with Llama 3.3 70B in JSON mode produces high-fidelity JSON complete with module definitions, estimated complexity, required specializations, and priority hierarchies. Express validates the schema and persists the result.
+*   **Regression Baseline**: `rag_service/validation/golden_chunks_v1.json` freezes the pre-LangChain chunk text and embedding vectors, so any future change to chunking or the embedding model can be diffed against a known-good reference rather than eyeballed.
 
 ### 🔐 Bidirectional GitHub Synchronization
 *   **Octokit Sync Engine**: Automatically maps and registers nodes on the canvas into GitHub Issues.
@@ -153,11 +161,14 @@ The application is split into three decoupled services cooperating in real-time:
 ### 2. The Primary Core API (Node.js & Express 5)
 *   Serves standard CRUD pipelines, authenticates users with JWT access and refresh rotation, and coordinates team resources.
 *   Manages open Socket.io rooms, enabling developers to co-author workflows concurrently.
-*   Receives Multipart PDF uploads, buffers them, streams them to the RAG microservice, compiles context-augmented prompt trees, and communicates with `Groq`.
+*   Receives Multipart PDF uploads behind JWT auth and a rate limiter, buffers them in memory, and forwards them to the RAG microservice with a shared-secret header.
+*   Owns everything that needs MongoDB — including the team-availability context injected into the AI prompt — and validates the JSON plan that comes back before persisting it.
 
-### 3. The RAG Semantic Parser (Python 3.11 & Flask)
-*   Receives standard file buffers, extracts raw texts via PyMuPDF, chunks paragraphs, embeds texts natively using CPU-optimized PyTorch models, and indexes them in a local ChromaDB collection.
-*   Resolves spatial semantic similarity requests, returning context vectors back to the Express controller within milliseconds.
+### 3. The RAG Semantic Parser (Python 3.11, Flask & LangChain)
+*   Extracts text via PyMuPDF, chunks it on paragraph and sentence boundaries, and wraps the result in LangChain `Document`s with page and character-offset metadata.
+*   Embeds on CPU through `HuggingFaceEmbeddings` and indexes into a per-document `langchain-chroma` collection created with explicit cosine distance.
+*   Runs retrieval with a request-scoped `k` (clamped to the collection size), then generates the task plan through an LCEL chain and returns both the retrieved context and the raw completion to Express.
+*   Served by **gunicorn** in production; the Flask dev server is local-development only.
 
 ---
 
@@ -178,9 +189,28 @@ To avoid merge conflicts on the visual canvas:
 ### AI & RAG Microservice
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-3.x-000000?style=flat-square&logo=flask&logoColor=white)
+![LangChain](https://img.shields.io/badge/LangChain-LCEL-1C3C3C?style=flat-square&logo=langchain&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-CPU-EE4C2C?style=flat-square&logo=pytorch&logoColor=white)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Store-FF6F61?style=flat-square&logo=databricks&logoColor=white)
 ![Groq](https://img.shields.io/badge/Groq-Llama_3.3_70B-F3A530?style=flat-square&logo=meta&logoColor=white)
+![Gunicorn](https://img.shields.io/badge/Gunicorn-WSGI-499848?style=flat-square&logo=gunicorn&logoColor=white)
+
+**Pinned LangChain stack** (`Backend/rag_service/requirements.txt`):
+
+| Package | Version | Role |
+| :--- | :--- | :--- |
+| `langchain-core` | `1.5.3` | LCEL primitives, prompt templates, `Document` |
+| `langchain-chroma` | `1.1.0` | Vector-store integration |
+| `langchain-huggingface` | `1.0.0` | `HuggingFaceEmbeddings` wrapper |
+| `langchain-groq` | `1.1.3` | `ChatGroq` chat model |
+| `chromadb` | `1.5.9` | Underlying vector store |
+
+> ⚠️ `langchain-huggingface` is pinned to **1.0.0, not latest**. Version 1.2.2 requires
+> `sentence-transformers>=5.2.0` and `transformers>=5.0.0`, which would upgrade the embedding
+> stack and invalidate the frozen baseline in `validation/`. 1.0.0 declares
+> `sentence-transformers>=2.6.0,<3.0.0` — an exact fit for the pins already in use.
+> The bare `langchain` umbrella package is intentionally **not** installed: an LCEL chain
+> only needs `langchain-core`, and the free-tier instance cannot spare the extra import weight.
 
 ---
 
@@ -190,11 +220,15 @@ To avoid merge conflicts on the visual canvas:
 Workflow-Orchestrator/
 ├── Backend/
 │   ├── rag_service/              # Python RAG Microservice
-│   │   ├── app.py                # Flask Server (PyMuPDF + sentence-transformers + ChromaDB)
-│   │   ├── requirements.txt      # Python CPU-optimized requirements
-│   │   └── chroma_db/            # Local vector DB directory
+│   │   ├── app.py                # Flask + LangChain (chunk → embed → Chroma → LCEL → Groq)
+│   │   ├── requirements.txt      # CPU-only torch + pinned LangChain stack
+│   │   ├── validation/           # Frozen chunk/embedding baseline for regression diffs
+│   │   ├── .env                  # Local-only: GROQ_API_KEY, RAG_SHARED_SECRET (untracked)
+│   │   ├── .dockerignore         # Keeps venv/ and chroma_db/ out of the image
+│   │   └── chroma_db/            # Local vector DB (untracked — rebuilt on demand)
 │   │
 │   ├── src/                      # Node.js API Service
+│   │   ├── config/               # ragConfig.js — RAG URL normalisation, auth header, timeouts
 │   │   ├── controllers/          # Route handlers (auth, project, task, team, workflow, analytics, AI)
 │   │   ├── db/                   # MongoDB connection
 │   │   ├── middlewares/          # JWT auth, role checks, rate limiter, error handler, multer
@@ -240,7 +274,7 @@ Workflow-Orchestrator/
 
 ### 1. Set Up the RAG Microservice
 
-Navigate to the `rag_service` folder, install CPU-optimized PyTorch and vector stores, then boot up:
+Navigate to the `rag_service` folder, install CPU-optimized PyTorch, LangChain and the vector store, then boot up:
 
 ```bash
 # Navigate to the Python microservice
@@ -253,11 +287,29 @@ source venv/bin/activate       # On Windows: .\venv\Scripts\activate
 # Install dependencies with CPU-targeted PyTorch resolutions
 pip install -r requirements.txt
 
-# Start the Flask microservice
+# Start the Flask microservice (development)
 python app.py
 ```
+
+Because generation now happens inside this service, it needs its own credentials.
+Create `Backend/rag_service/.env` (untracked, and excluded from the Docker image):
+
+```dotenv
+GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxx
+GROQ_MODEL=llama-3.3-70b-versatile
+
+# Must match RAG_SHARED_SECRET in Backend/.env
+RAG_SHARED_SECRET=your_shared_secret
+```
+
 > [!NOTE]
 > The Flask RAG server starts locally on `http://127.0.0.1:5001/rag`.
+> In production it is served by gunicorn instead — `gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120 app:app`.
+
+> [!IMPORTANT]
+> **`GROQ_API_KEY` now belongs to the RAG service, not just the Node backend.** The chain is
+> built lazily, so the service will start and pass its health check without the key and then
+> fail every `/rag` request. When deploying, set it on the Python service too.
 
 ---
 
@@ -319,12 +371,28 @@ Create a `.env` file in the `Backend` directory containing the following:
 | `MAIL_FROM_ADDRESS` | Mail Notification | `onboarding@resend.dev` |
 | `FRONTEND_URL` | Application Routing | `http://localhost:5173` |
 | `SERVER_URL` | Application Routing | `http://localhost:8000` |
-| `RAG_SERVICE_URL` | AI Service Connector | `http://127.0.0.1:5001/rag` |
-| `GROQ_API_KEY` | Groq LLM Key | `gsk_xxxxxxxxxxxxxxxxxxxxxxxx` |
+| `RAG_SERVICE_URL` | AI Service Connector (base URL or `…/rag` — both accepted) | `http://127.0.0.1:5001/rag` |
+| `RAG_SHARED_SECRET` | Shared secret sent as `X-RAG-Secret` to the RAG service | `43_char_random_url_safe_string` |
 | `GITHUB_TOKEN` | Octokit Sync Token | `ghp_xxxxxxxxxxxxxxxxxxxxxxxx` |
 | `GITHUB_OWNER` | GitHub Repository Owner | `princethakarar` |
 | `GITHUB_REPO` | GitHub Repository Name | `Workflow-Orchestrator` |
 | `GITHUB_WEBHOOK_SECRET` | GitHub Security Key | `any_custom_secure_string` |
+
+And a second `.env` in `Backend/rag_service/` for the Python service:
+
+| Variable Name | Purpose / Category | Example Value |
+| :--- | :--- | :--- |
+| `GROQ_API_KEY` | Groq LLM Key — **required**, generation runs here now | `gsk_xxxxxxxxxxxxxxxxxxxxxxxx` |
+| `GROQ_MODEL` | Model override (defaults to Llama 3.3 70B) | `llama-3.3-70b-versatile` |
+| `RAG_SHARED_SECRET` | Must match the value in `Backend/.env` | `43_char_random_url_safe_string` |
+| `RAG_ALLOWED_ORIGINS` | Optional browser CORS allow-list; empty = server-to-server only | *(leave empty)* |
+
+> [!WARNING]
+> **Rollout order for `RAG_SHARED_SECRET`:** set it on the **Node backend first**, then on the
+> RAG service. An unconfigured RAG service ignores the header and logs a warning on every start,
+> so configuring in this order begins enforcement without an outage window. Every route is gated
+> once the secret is present — including `DELETE /cache` — with the sole exception of
+> `GET /health`, which stays open for the keep-alive pinger and returns a trimmed payload.
 
 ---
 
