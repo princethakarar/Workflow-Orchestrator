@@ -15,7 +15,20 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-fetch the ONNX MiniLM model at BUILD time (~80 MB). Without this every
+# cold container downloads it on the first request, because Render's filesystem
+# is ephemeral and the ~/.cache/chroma directory does not survive a restart.
+RUN python -c "from chromadb.utils import embedding_functions as ef; ef.ONNXMiniLM_L6_V2()(['warmup'])"
+
 COPY . .
+
+# Single-threaded native execution and a capped malloc arena count: this service
+# runs under a 512 MB RSS limit and threads are the main source of hidden RSS.
+ENV OMP_NUM_THREADS=1 \
+    ORT_NUM_THREADS=1 \
+    MALLOC_ARENA_MAX=2 \
+    TOKENIZERS_PARALLELISM=false \
+    PYTHONUNBUFFERED=1
 
 # Render sets PORT dynamically
 EXPOSE 5001

@@ -7,15 +7,22 @@ import os
 #   1. load_dotenv()  — local-dev config (GROQ_API_KEY, GROQ_MODEL,
 #                       RAG_SHARED_SECRET). On Render these come from the
 #                       dashboard and no .env file exists.
-#   2. CUDA_VISIBLE_DEVICES / TOKENIZERS_PARALLELISM — must be set BEFORE the
-#      first import that pulls in torch. That used to mean only
-#      sentence_transformers; it now also means every langchain_* import below,
-#      since langchain_huggingface imports sentence_transformers transitively.
+#   2. Threading / device env — must be set BEFORE the first import that starts
+#      a native runtime. Embeddings now run on ONNX Runtime rather than torch,
+#      so the lever is OMP_NUM_THREADS; onnxruntime reads it at import time.
 # ══════════════════════════════════════════════════════════════════════════════
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-# Force CPU-only execution and prevent CUDA driver libraries from loading into memory
+# Single-threaded native execution. Extra threads buy nothing on a 0.1-CPU free
+# instance and each one costs stack + arena memory, which is the binding
+# constraint here (Render free tier caps the service at 512 MB RSS).
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("ORT_NUM_THREADS", "1")
+# Caps glibc's per-thread malloc arenas. Without it a threaded process can hold
+# a large amount of freed-but-unreturned heap, inflating RSS well past live size.
+os.environ.setdefault("MALLOC_ARENA_MAX", "2")
+# Defensive: nothing here loads CUDA any more, but keep GPU discovery off.
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 # Disable parallelism in Hugging Face tokenizers to prevent memory leak warnings/spikes
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -28,18 +35,13 @@ import hashlib
 import hmac
 import re
 import logging
-import torch
 
-# ── PyTorch RAM / CPU thread optimizations ──────────────────────────────────────
-# Restrict thread pools to 1 to avoid excessive stack allocations and virtual RAM inflation
-torch.set_num_threads(1)
-torch.set_num_interop_threads(1)
-
+from chromadb.utils import embedding_functions as chroma_embedding_functions
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -113,22 +115,59 @@ def _request_is_authenticated() -> bool:
     return hmac.compare_digest(request.headers.get(RAG_SECRET_HEADER, ""), RAG_SHARED_SECRET)
 
 
-# ── Embeddings (Lightweight & efficient, CPU-only) ────────────────────────────
-# LangChain wrapper around the same sentence-transformers model as before.
-# Verified against validation/golden_chunks_v1.json: cosine similarity 1.0000000000
-# and a max elementwise delta of 7.451e-08 vs. the frozen vectors.
+# ── Embeddings (ONNX Runtime, CPU-only) ───────────────────────────────────────
+# Same model as before — all-MiniLM-L6-v2, 384 dimensions — but executed by
+# ONNX Runtime instead of torch + sentence-transformers.
 #
-# normalize_embeddings is explicitly False: the frozen baseline was built from
-# un-normalised vectors, and flipping it would silently change every cosine
-# distance. `encode()` already runs under torch.no_grad() inside
-# sentence-transformers, so the previous explicit no_grad() wrappers are not lost.
-EMBED_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-log.info("Loading embeddings (%s) on CPU…", EMBED_MODEL_NAME)
-EMBEDDINGS = HuggingFaceEmbeddings(
-    model_name=EMBED_MODEL_NAME,
-    model_kwargs={"device": "cpu"},
-    encode_kwargs={"normalize_embeddings": False},
-)
+# WHY: the free Render instance is capped at 512 MB RSS and the torch path
+# peaked at ~559 MB, which is the OOM. Measured contributions were torch 171 MB
+# + model weights 124 MB + a 69 MB inference spike. The ONNX path peaks at
+# ~293 MB and pulls in no new dependency: onnxruntime already ships as a
+# chromadb dependency.
+#
+# EQUIVALENCE: verified against validation/golden_chunks_v1.json — cosine
+# similarity 1.000000 against the torch baseline on all 10 frozen vectors.
+# The ONNX function L2-normalises its output where the torch path did not, but
+# cosine distance is scale-invariant and the collections are created with
+# hnsw:space=cosine, so retrieval ordering is unaffected. Only raw vector
+# magnitudes differ.
+EMBED_MODEL_NAME = "all-MiniLM-L6-v2 (ONNX Runtime)"
+
+
+class OnnxMiniLMEmbeddings(Embeddings):
+    """LangChain Embeddings backed by ChromaDB's bundled ONNX MiniLM.
+
+    Implements the same interface HuggingFaceEmbeddings did, so langchain_chroma
+    and the rest of the chain are unchanged. The model is fetched to
+    ~/.cache/chroma/onnx_models on first use; the Dockerfile pre-warms it at
+    build time so a cold container does not pay the download.
+    """
+
+    # ONNX Runtime sizes its allocation arena from the largest batch it is
+    # handed, and the underlying function embeds whatever list it is given in
+    # one go. Measured unbatched: 10 chunks -> 348 MB peak, 25 -> 556 MB,
+    # 100 -> 822 MB. Feeding it fixed-size batches keeps the peak flat and
+    # independent of document length, which is what keeps a large PDF inside
+    # the 512 MB cap.
+    BATCH_SIZE = 8
+
+    def __init__(self):
+        self._fn = chroma_embedding_functions.ONNXMiniLM_L6_V2()
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        texts = list(texts)
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), self.BATCH_SIZE):
+            batch = texts[start:start + self.BATCH_SIZE]
+            vectors.extend([float(x) for x in vector] for vector in self._fn(batch))
+        return vectors
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_documents([text])[0]
+
+
+log.info("Loading embeddings (%s)…", EMBED_MODEL_NAME)
+EMBEDDINGS = OnnxMiniLMEmbeddings()
 log.info("Embedding model ready ✓")
 
 # ── Persistent ChromaDB Client ────────────────────────────────────────────────

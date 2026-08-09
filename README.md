@@ -103,7 +103,7 @@ sequenceDiagram
     Note over BE: Builds TEAM_CONTEXT string.<br/>Mongo access stays in Node — Python never touches the database.
     BE->>RAG: POST /rag (PDF Buffer + Query + TEAM_CONTEXT)<br/>header: X-RAG-Secret
     activate RAG
-    Note over RAG: PyMuPDF extracts text → paragraph/sentence chunker →<br/>LangChain Documents → HuggingFaceEmbeddings (all-MiniLM-L6-v2) →<br/>Chroma collection per document (cosine) → top-k similarity retrieval.
+    Note over RAG: PyMuPDF extracts text → paragraph/sentence chunker →<br/>LangChain Documents → ONNX MiniLM embeddings (all-MiniLM-L6-v2) →<br/>Chroma collection per document (cosine) → top-k similarity retrieval.
     RAG->>Groq: LCEL chain (prompt → ChatGroq), Llama 3.3 70B, JSON mode
     activate Groq
     Groq-->>RAG: Return Structured JSON Plan
@@ -133,8 +133,8 @@ sequenceDiagram
 *   **Multiplayer Collision & Sync**: Synchronized room-based updates via `socket.io-client` preventing overriding and tracking user movements instantly.
 
 ### 📄 AI-Driven Architecture Analysis (RAG on LangChain)
-*   **LangChain Pipeline**: The Python microservice runs the full retrieval-and-generation chain on LangChain — `langchain-huggingface` embeddings, `langchain-chroma` for the vector store, and an LCEL chain (`prompt | ChatGroq`) for generation. Deliberately *not* a canned `RetrievalQA` chain, whose default prompt would silently override the hand-tuned rules block.
-*   **Local Vector Embeddings**: `HuggingFaceEmbeddings` wrapping `sentence-transformers` (`all-MiniLM-L6-v2`, 384-dim) on CPU, indexed into one local `ChromaDB` collection per document, keyed by SHA-256 of the PDF bytes so re-uploading the same file skips re-embedding entirely.
+*   **LangChain Pipeline**: The Python microservice runs the full retrieval-and-generation chain on LangChain — a custom ONNX-backed `Embeddings` implementation, `langchain-chroma` for the vector store, and an LCEL chain (`prompt | ChatGroq`) for generation. Deliberately *not* a canned `RetrievalQA` chain, whose default prompt would silently override the hand-tuned rules block.
+*   **Local Vector Embeddings**: `all-MiniLM-L6-v2` (384-dim) executed on **ONNX Runtime**, exposed to LangChain through a small `Embeddings` subclass, and indexed into one local `ChromaDB` collection per document, keyed by SHA-256 of the PDF bytes so re-uploading the same file skips re-embedding entirely. Embedding is batched so peak memory stays flat regardless of document length.
 *   **Content-Aware Chunking**: A custom paragraph- and sentence-boundary chunker (not a generic character splitter) emits LangChain `Document`s carrying page and character-offset metadata, with overlap budgeted *before* the size ceiling so no chunk overruns it.
 *   **Dynamic LLM Generation**: `ChatGroq` with Llama 3.3 70B in JSON mode produces high-fidelity JSON complete with module definitions, estimated complexity, required specializations, and priority hierarchies. Express validates the schema and persists the result.
 *   **Regression Baseline**: `rag_service/validation/golden_chunks_v1.json` freezes the pre-LangChain chunk text and embedding vectors, so any future change to chunking or the embedding model can be diffed against a known-good reference rather than eyeballed.
@@ -166,7 +166,7 @@ The application is split into three decoupled services cooperating in real-time:
 
 ### 3. The RAG Semantic Parser (Python 3.11, Flask & LangChain)
 *   Extracts text via PyMuPDF, chunks it on paragraph and sentence boundaries, and wraps the result in LangChain `Document`s with page and character-offset metadata.
-*   Embeds on CPU through `HuggingFaceEmbeddings` and indexes into a per-document `langchain-chroma` collection created with explicit cosine distance.
+*   Embeds on CPU through ONNX Runtime (no torch) and indexes into a per-document `langchain-chroma` collection created with explicit cosine distance.
 *   Runs retrieval with a request-scoped `k` (clamped to the collection size), then generates the task plan through an LCEL chain and returns both the retrieved context and the raw completion to Express.
 *   Served by **gunicorn** in production; the Flask dev server is local-development only.
 
@@ -190,7 +190,7 @@ To avoid merge conflicts on the visual canvas:
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-3.x-000000?style=flat-square&logo=flask&logoColor=white)
 ![LangChain](https://img.shields.io/badge/LangChain-LCEL-1C3C3C?style=flat-square&logo=langchain&logoColor=white)
-![PyTorch](https://img.shields.io/badge/PyTorch-CPU-EE4C2C?style=flat-square&logo=pytorch&logoColor=white)
+![ONNX Runtime](https://img.shields.io/badge/ONNX_Runtime-CPU-005CED?style=flat-square&logo=onnx&logoColor=white)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Store-FF6F61?style=flat-square&logo=databricks&logoColor=white)
 ![Groq](https://img.shields.io/badge/Groq-Llama_3.3_70B-F3A530?style=flat-square&logo=meta&logoColor=white)
 ![Gunicorn](https://img.shields.io/badge/Gunicorn-WSGI-499848?style=flat-square&logo=gunicorn&logoColor=white)
@@ -199,17 +199,25 @@ To avoid merge conflicts on the visual canvas:
 
 | Package | Version | Role |
 | :--- | :--- | :--- |
-| `langchain-core` | `1.5.3` | LCEL primitives, prompt templates, `Document` |
+| `langchain-core` | `1.5.3` | LCEL primitives, prompt templates, `Document`, `Embeddings` |
 | `langchain-chroma` | `1.1.0` | Vector-store integration |
-| `langchain-huggingface` | `1.0.0` | `HuggingFaceEmbeddings` wrapper |
 | `langchain-groq` | `1.1.3` | `ChatGroq` chat model |
-| `chromadb` | `1.5.9` | Underlying vector store |
+| `chromadb` | `1.5.9` | Vector store **and** the ONNX MiniLM embedding runtime |
 
-> ⚠️ `langchain-huggingface` is pinned to **1.0.0, not latest**. Version 1.2.2 requires
-> `sentence-transformers>=5.2.0` and `transformers>=5.0.0`, which would upgrade the embedding
-> stack and invalidate the frozen baseline in `validation/`. 1.0.0 declares
-> `sentence-transformers>=2.6.0,<3.0.0` — an exact fit for the pins already in use.
-> The bare `langchain` umbrella package is intentionally **not** installed: an LCEL chain
+> ⚠️ **There is no `torch` and no `sentence-transformers` here, on purpose.** The Render free
+> instance is capped at **512 MB RSS** and the torch-based build peaked at **559 MB** — an
+> instant OOM. Measured contributions were torch import 171 MB, MiniLM weights 124 MB and a
+> 69 MB inference spike. Embeddings now run on **ONNX Runtime**, which already ships as a
+> `chromadb` dependency, using the same `all-MiniLM-L6-v2` model. Peak is now ~403 MB even for
+> a 400-chunk document. `langchain-huggingface` went with them — it exists only to wrap
+> `sentence-transformers` — and is replaced by a ~20-line `Embeddings` subclass in `app.py`.
+>
+> Equivalence is verified, not assumed: **cosine similarity 1.000000** against the frozen torch
+> vectors in `validation/golden_chunks_v1.json`. The ONNX function L2-normalises its output
+> where torch did not, but cosine distance is scale-invariant and collections are created with
+> `hnsw:space=cosine`, so retrieval ordering is unchanged.
+>
+> The bare `langchain` umbrella package is also intentionally **not** installed: an LCEL chain
 > only needs `langchain-core`, and the free-tier instance cannot spare the extra import weight.
 
 ---
@@ -274,7 +282,7 @@ Workflow-Orchestrator/
 
 ### 1. Set Up the RAG Microservice
 
-Navigate to the `rag_service` folder, install CPU-optimized PyTorch, LangChain and the vector store, then boot up:
+Navigate to the `rag_service` folder, install LangChain and the vector store, then boot up:
 
 ```bash
 # Navigate to the Python microservice
@@ -284,7 +292,7 @@ cd Backend/rag_service
 python -m venv venv
 source venv/bin/activate       # On Windows: .\venv\Scripts\activate
 
-# Install dependencies with CPU-targeted PyTorch resolutions
+# Install dependencies (CPU-only; no torch)
 pip install -r requirements.txt
 
 # Start the Flask microservice (development)
