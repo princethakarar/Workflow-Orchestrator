@@ -55,6 +55,9 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
+      # Public URL of this service — used by the internal keep-alive pinger.
+      - key: BACKEND_PUBLIC_URL
+        value: https://workflow-orchestrator-backend.onrender.com
 
   # Frontend Static Site
   - type: web

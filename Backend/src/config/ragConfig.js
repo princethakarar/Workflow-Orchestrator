@@ -44,5 +44,14 @@ export const getRagAuthHeaders = () => {
  */
 export const RAG_REQUEST_TIMEOUT_MS = 120_000
 
-/** Health pings must stay cheap — the service either answers or it is asleep. */
-export const RAG_HEALTH_TIMEOUT_MS = 30_000
+/**
+ * Health-ping budget. This is NOT "cheap" — the ping's whole job is to wake a
+ * spun-down Render free instance, so it has to outlast a cold start or it
+ * aborts the very wake-up it triggered and logs a phantom failure.
+ *
+ * 30s was too short: a measured cold start on the deployed service took 41.9s
+ * to first byte (warm follow-ups were instant). 90s leaves headroom for a slow
+ * instance boot without matching the full pipeline budget below — a health
+ * check that hasn't answered in 90s means the service is broken, not busy.
+ */
+export const RAG_HEALTH_TIMEOUT_MS = 90_000

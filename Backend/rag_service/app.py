@@ -21,6 +21,12 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("ORT_NUM_THREADS", "1")
 # Caps glibc's per-thread malloc arenas. Without it a threaded process can hold
 # a large amount of freed-but-unreturned heap, inflating RSS well past live size.
+#
+# WARNING: setting this here is a NO-OP for the running process. glibc reads
+# MALLOC_ARENA_MAX once, at process start, before Python exists. It must be set
+# in the environment that *launches* the interpreter — on Render that means a
+# dashboard env var (see RENDER.md), not this line. Kept only so a local
+# `python app.py` run passes it down to any child process it spawns.
 os.environ.setdefault("MALLOC_ARENA_MAX", "2")
 # Defensive: nothing here loads CUDA any more, but keep GPU discovery off.
 os.environ["CUDA_VISIBLE_DEVICES"] = ""

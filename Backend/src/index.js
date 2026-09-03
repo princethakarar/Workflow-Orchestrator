@@ -3,6 +3,7 @@ import app from "./app.js";
 import connectDB from "./db/databaseConnection.js";
 import { logger } from "./utils/logger.js";
 import { startProjectScheduler } from "./services/projectSchedulerService.js";
+import { startKeepAliveScheduler } from "./services/keepAliveService.js";
 import http from "http";
 import { initSocket } from "./utils/socket.js";
 import {
@@ -74,6 +75,7 @@ connectDB()
             console.log(`[Startup] Server listening on port ${port}`);
             logger.info(`Server running on port ${port}`);
             warmUpRAG();
+            startKeepAliveScheduler();
         });
     })
     .catch((err) => {

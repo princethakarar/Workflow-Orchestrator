@@ -1,5 +1,15 @@
-# ── Render FREE tier optimized Dockerfile ──────────────────────────────────────
-# Python 3.11 slim to match runtime.txt and ensure CPU torch wheels resolve.
+# ── Local container builds only — RENDER DOES NOT USE THIS FILE ───────────────
+# The Render service is a *native Python runtime* service (GitHub deploy, root
+# dir Backend/rag_service). Render only reads a Dockerfile when the service's
+# runtime is Docker; for a language runtime it auto-detects requirements.txt and
+# ignores this file, runtime.txt included.
+#
+# Every knob below — the gunicorn CMD, the ENV block, the build-time model
+# prefetch — must be mirrored by hand into the Render dashboard. See RENDER.md
+# for the exact build command, start command, and env vars. The two drifting
+# apart is what caused the 503s documented there.
+#
+# Python 3.11 slim to match runtime.txt and ensure CPU wheels resolve.
 FROM python:3.11-slim
 
 # System deps for PyMuPDF (C extensions) and ChromaDB (SQLite)
