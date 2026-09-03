@@ -756,15 +756,14 @@ def get_chain():
         request_timeout=GROQ_TIMEOUT_SECONDS,
         max_retries=GROQ_MAX_RETRIES,
         groq_api_key=api_key,
+        reasoning_effort="low",     # this installed version of langchain-groq (1.1.3) exposes this as a
+                                    # first-class constructor param — passing it inside model_kwargs raises
+                                    # a pydantic ValidationError at construction time
+        reasoning_format="hidden",  # same as above — required by Groq when JSON mode + reasoning model are
+                                    # combined, but must be passed here, not in model_kwargs
         # ChatGroq has no first-class response_format field; it is forwarded to
         # the Groq API through model_kwargs.
-        model_kwargs={
-            "response_format": {"type": "json_object"},
-            "reasoning_effort": "low",    # structured extraction needs no deep reasoning — keeps latency and cost low
-            "reasoning_format": "hidden",  # REQUIRED by Groq when JSON mode + reasoning model: without this the
-                                           # chain-of-thought text leaks into the response content and breaks JSON
-                                           # parsing, causing json_validate_failed (HTTP 400).
-        },
+        model_kwargs={"response_format": {"type": "json_object"}},
     )
 
     # Plain LCEL: prompt | llm. NOT RetrievalQA or any canned chain — those
