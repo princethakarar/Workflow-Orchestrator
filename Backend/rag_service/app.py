@@ -232,10 +232,13 @@ GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 # Ceiling on generated tokens. Measured from the 35 real completions logged in
 # Backend/datasets/fine_tuning_dataset.jsonl: p50 ≈ 1,935 tokens, p90 ≈ 2,014,
-# max ≈ 2,892 (chars/3.6). 8192 gives ~2.8x headroom over the largest plan ever
-# produced — room for bigger documents without letting a degenerate repetition
-# loop run to the model's full 32k completion window.
-GROQ_MAX_TOKENS = 8192
+# max ≈ 2,892 (chars/3.6). Raised from 8192 → 16384 because the current model
+# (openai/gpt-oss-120b) is a reasoning model: it consumes part of this budget on
+# internal chain-of-thought before producing the final JSON, so the effective
+# output headroom shrinks by however many tokens the reasoning trace uses.
+# 16384 preserves ~2.8x headroom over the largest observed plan while leaving
+# room for the reasoning trace without hitting the model's completion window.
+GROQ_MAX_TOKENS = 16384
 
 # Client-level timeout. Must leave room inside the callers' budgets: the Node
 # fetch aborts at 120s and gunicorn kills the worker at 120s, and this call is
@@ -581,7 +584,13 @@ class DynamicKRetriever:
     few as one vector, so k is computed per call.
     """
 
-    FALLBACK_QUERY = "workflow tasks features"
+    FALLBACK_QUERY = (
+        "Extract all important project tasks, features, modules, technical requirements, "
+        "system components, user roles, workflows, and implementation details needed to "
+        "build this software project from scratch. Include functional requirements, "
+        "non-functional requirements, API integrations, database design, authentication, "
+        "UI screens, and deployment considerations."
+    )
 
     def __init__(self, store: Chroma, client, collection_name: str, top_k: int = TOP_K):
         self.store = store
@@ -749,7 +758,13 @@ def get_chain():
         groq_api_key=api_key,
         # ChatGroq has no first-class response_format field; it is forwarded to
         # the Groq API through model_kwargs.
-        model_kwargs={"response_format": {"type": "json_object"}},
+        model_kwargs={
+            "response_format": {"type": "json_object"},
+            "reasoning_effort": "low",    # structured extraction needs no deep reasoning — keeps latency and cost low
+            "reasoning_format": "hidden",  # REQUIRED by Groq when JSON mode + reasoning model: without this the
+                                           # chain-of-thought text leaks into the response content and breaks JSON
+                                           # parsing, causing json_validate_failed (HTTP 400).
+        },
     )
 
     # Plain LCEL: prompt | llm. NOT RetrievalQA or any canned chain — those

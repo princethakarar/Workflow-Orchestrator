@@ -133,7 +133,7 @@ export const uploadAndProcessPdf = async (req, res, next) => {
         }
 
         const dataBuffer = req.file.buffer;
-        const query = req.body.prompt || "Generate modules, tasks, subtasks, priority, and dependencies";
+        const query = req.body.prompt || "Extract all important project tasks, features, modules, technical requirements, system components, user roles, workflows, and implementation details needed to build this software project from scratch. Include functional requirements, non-functional requirements, API integrations, database design, authentication, UI screens, and deployment considerations.";
 
         // ── Step 1: Team context (unchanged — stays in Node, it needs Mongo) ──
         // Computed before the RAG call now, because it is sent to the Python
