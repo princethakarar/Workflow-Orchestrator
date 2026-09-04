@@ -41,6 +41,9 @@ import hashlib
 import hmac
 import re
 import logging
+import threading
+import time
+import urllib.request
 
 from chromadb.utils import embedding_functions as chroma_embedding_functions
 from langchain_core.documents import Document
@@ -90,6 +93,67 @@ if _cors_origins:
     log.warning("CORS enabled for origins: %s", _cors_origins)
 else:
     log.info("CORS disabled — server-to-server access only")
+
+
+# ── Mutual keep-alive (cross-service pinger) ──────────────────────────────────
+#
+# The Node backend keeps the RAG service alive by pinging /health every 14 min.
+# But the backend itself can still spin down — its internal cron dies with the
+# process, so a sleeping backend cannot wake itself.
+#
+# Fix: the RAG service (a SEPARATE process on Render) pings the backend's public
+# URL on the same 14-minute cadence. If the backend goes down, the RAG service
+# is still alive and its ping wakes the backend via Render's load balancer.
+# Both services now keep each other alive regardless of which one boots first.
+#
+# Implementation uses only stdlib (threading + urllib) — no new dependency.
+# The thread is a daemon so it never blocks gunicorn shutdown.
+
+_BACKEND_URL = os.environ.get("BACKEND_PUBLIC_URL", "").strip().rstrip("/")
+_SELF_URL    = os.environ.get("SELF_PUBLIC_URL",    "").strip().rstrip("/")
+_KEEP_ALIVE_INTERVAL_S = 14 * 60  # 14 minutes — inside Render's 15-min window
+_KEEP_ALIVE_TIMEOUT_S  = 90       # cold-start budget; a sleeping Render instance
+                                   # can take 30–60 s to first byte
+
+
+def _ping(label: str, url: str) -> None:
+    """GET url, log the outcome. Never raises."""
+    try:
+        req = urllib.request.urlopen(
+            urllib.request.Request(url, method="GET"),
+            timeout=_KEEP_ALIVE_TIMEOUT_S,
+        )
+        log.info("[KeepAlive] %s is awake — HTTP %d", label, req.status)
+    except Exception as exc:
+        log.warning("[KeepAlive] %s ping failed: %s (%s)", label, exc, url)
+
+
+def _keep_alive_loop() -> None:
+    """Daemon thread: ping both services every 14 minutes."""
+    # Wait one full interval before the first ping so startup noise settles
+    # and the /health route is guaranteed to be registered.
+    time.sleep(_KEEP_ALIVE_INTERVAL_S)
+    while True:
+        if _BACKEND_URL:
+            _ping("Backend", f"{_BACKEND_URL}/health")
+        if _SELF_URL:
+            _ping("RAG-self", f"{_SELF_URL}/health")
+        time.sleep(_KEEP_ALIVE_INTERVAL_S)
+
+
+if os.environ.get("NODE_ENV") == "production" or os.environ.get("RENDER") == "true":
+    if _BACKEND_URL or _SELF_URL:
+        _t = threading.Thread(target=_keep_alive_loop, name="keep-alive", daemon=True)
+        _t.start()
+        log.info(
+            "[KeepAlive] Cross-service pinger started — backend=%s  self=%s",
+            _BACKEND_URL or "(not set)",
+            _SELF_URL    or "(not set)",
+        )
+    else:
+        log.info("[KeepAlive] Skipping cross-service pinger (BACKEND_PUBLIC_URL and SELF_PUBLIC_URL not set)")
+else:
+    log.info("[KeepAlive] Skipping cross-service pinger (not running on Render)")
 
 
 @app.before_request
