@@ -58,6 +58,17 @@ services:
       # Public URL of this service — used by the internal keep-alive pinger.
       - key: BACKEND_PUBLIC_URL
         value: https://workflow-orchestrator-backend.onrender.com
+      # Signals to the RAG service's keep-alive thread that it is running on Render.
+      # Render sets this automatically on its own instances, but the backend needs
+      # to forward it so the RAG service cross-pinger activates correctly.
+      - key: RENDER
+        value: "true"
+      # NOTE: The RAG service is deployed separately via Docker (not listed here).
+      # Add these two env vars in the Render dashboard for the rag-service instance:
+      #   BACKEND_PUBLIC_URL = https://workflow-orchestrator-backend.onrender.com
+      #   SELF_PUBLIC_URL    = https://rag-service-uepk.onrender.com
+      # These are read by the keep-alive background thread in rag_service/app.py
+      # so the RAG service can ping both itself and the backend every 14 minutes.
 
   # Frontend Static Site
   - type: web
