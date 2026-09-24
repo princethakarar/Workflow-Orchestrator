@@ -20,7 +20,8 @@ app.use("/api/webhooks/github", express.raw({ type: "application/json" }))
 
 app.use(express.json({ limit: "16kb" }))
 app.use(express.urlencoded({ extended: true, limit: "16kb" }))
-app.use(express.static("public"))
+// Note: express.static("public") removed — uploaded files are now stored in
+// Cloudinary and served from their CDN URL, not the local filesystem.
 app.use(cookieParser())
 
 // Cookies across subdomains require CORS with an explicit origin and credentials=true.

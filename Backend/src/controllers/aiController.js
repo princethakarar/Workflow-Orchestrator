@@ -1,6 +1,7 @@
 import { Project } from "../models/projectModel.js";
 import { Task } from "../models/Task.js";
 import fs from "fs/promises";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import {
@@ -46,7 +47,9 @@ function validateLlmResponse(data) {
  */
 async function logToDataset(context, query, response) {
     try {
-        const datasetDir = path.join(__dirname, "../../datasets");
+        // On Vercel, only /tmp is writable. Writes here are ephemeral
+        // (lost between invocations) but won't crash the function.
+        const datasetDir = path.join(os.tmpdir(), "workflow-datasets");
         await fs.mkdir(datasetDir, { recursive: true });
         
         const logEntry = {

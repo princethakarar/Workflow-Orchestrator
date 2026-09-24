@@ -1,0 +1,14 @@
+# The Docker build context for this service is rag_service/, so Backend/.dockerignore
+# does not apply here — without this file the local venv (~GBs) gets copied into
+# the image by "COPY . .".
+venv/
+__pycache__/
+*.pyc
+
+# Vector store is rebuilt on demand; never ship stale collections in the image.
+chroma_db/
+
+# Dev-only assets
+validation/
+start.bat
+.env

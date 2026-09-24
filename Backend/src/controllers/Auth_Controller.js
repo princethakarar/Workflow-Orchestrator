@@ -8,6 +8,7 @@ import { getVerifyEmailHtml } from "../templates/emails/verifyEmail.js"
 import { getResetPasswordHtml } from "../templates/emails/resetPassword.js"
 import jwt from "jsonwebtoken"
 import crypto from "crypto";
+import { uploadBufferToCloudinary, deleteFromCloudinary } from "../utils/cloudinary.js"
 
 const generateAccessAndRefreshTokens = async (userId) => {
     try {
@@ -627,11 +628,16 @@ const uploadAvatar = asyncHandler(async (req, res) => {
     const user = await User.findById(req.user._id)
     if (!user) throw new ApiError(404, 'User not found')
 
-    // Build public URL — file saved to ./public/images by multer
-    const filename = req.file.filename
-    const avatarUrl = `/images/${filename}`
+    // Delete the previous avatar from Cloudinary before uploading the new one
+    if (user.avatar?.publicId) {
+        await deleteFromCloudinary(user.avatar.publicId).catch(() => null)
+    }
 
-    user.avatar = { url: avatarUrl, localPath: req.file.path }
+    // Upload the in-memory buffer directly to Cloudinary (no local disk writes)
+    const result = await uploadBufferToCloudinary(req.file.buffer, "avatars")
+    const avatarUrl = result.secure_url
+
+    user.avatar = { url: avatarUrl, publicId: result.public_id }
     await user.save({ validateBeforeSave: false })
 
     // Refresh stored user in response so frontend can update localStorage
