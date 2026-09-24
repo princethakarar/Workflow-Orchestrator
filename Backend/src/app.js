@@ -12,6 +12,7 @@ import webhookRouter from "./routes/webhook.js"
 import aiRouter from "./routes/aiRoutes.js"
 import cookieParser from "cookie-parser"
 import { errorMiddleware } from "./middlewares/error_middleware.js"
+import connectDB from "./db/databaseConnection.js"
 
 const app = express()
 
@@ -60,6 +61,23 @@ app.use(cors({
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
 }))
+
+// ── Serverless DB connection middleware ───────────────────────────────────────
+// On Vercel every request is a serverless invocation. We cannot connect to
+// MongoDB at startup (there is no persistent startup), so we ensure the
+// cached connection is established before any route handler runs.
+// /health is exempted so it can confirm the function is alive even when the
+// DB is momentarily unreachable.
+app.use(async (req, res, next) => {
+    if (req.path === "/health") return next()
+    try {
+        await connectDB()
+        next()
+    } catch (err) {
+        console.error("[DB middleware] Connection failed:", err.message)
+        res.status(500).json({ message: "Database connection failed" })
+    }
+})
 
 app.use("/api/v1/test", testRouter);
 app.use("/api/v1/auth", authRouter);
