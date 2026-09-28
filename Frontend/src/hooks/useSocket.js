@@ -60,6 +60,7 @@ export const useSocket = (projectId) => {
 
   return {
     socket: socketRef.current,
+    socketRef,          // ← expose the ref so callers always read the live id
     on,
     off,
     isConnected,

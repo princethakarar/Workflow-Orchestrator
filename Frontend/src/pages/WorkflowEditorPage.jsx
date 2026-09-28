@@ -21,7 +21,7 @@ const WorkflowEditorPage = () => {
     const navigate = useNavigate()
     const { isDark, toggle } = useTheme()
     const { user } = useAuth()
-    const { on, off, isConnected, socket } = useSocket(projectId)
+    const { on, off, isConnected, socketRef } = useSocket(projectId)
 
     const {
         project,
@@ -166,7 +166,7 @@ const WorkflowEditorPage = () => {
                     initialEdges={edges}
                     initialSubtasks={availableSubtasks}
                     canEdit={canEdit}
-                    socketId={socket?.id}
+                    socketRef={socketRef}
                 />
             </div>
         </div>

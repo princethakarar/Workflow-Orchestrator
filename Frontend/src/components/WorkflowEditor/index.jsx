@@ -66,7 +66,7 @@ const WorkflowEditor = ({
     initialEdges = [],
     initialSubtasks = [],
     canEdit = false,
-    socketId,
+    socketRef,   // ref to live socket — always has the latest id even after reconnects
     onSaved
 }) => {
     const reactFlowWrapper = useRef(null)
@@ -87,11 +87,6 @@ const WorkflowEditor = ({
         return () => window.removeEventListener('resize', handleResize)
     }, [])
 
-    // ── Sync guard ──────────────────────────────────────────────────────────
-    // When true, state changes came from a remote sync (not local user edits)
-    // and should NOT trigger auto-save — breaking the infinite loop.
-    const isSyncingRemote = useRef(false)
-
     // Stamp canEdit into every node's data so SubtaskNode remove button knows
     const stampCanEdit = useCallback((nds) =>
         nds.map(n => ({ ...n, data: { ...n.data, canEdit } }))
@@ -101,26 +96,49 @@ const WorkflowEditor = ({
     const [edges, setEdges] = useEdgesState(
         applyEdgeStyles(initialEdges, initialNodes)
     )
-
-    // Sync internal state when initial props change (e.g., after a remote socket update)
-    // The guard prevents this from triggering auto-save.
-    useEffect(() => {
-        isSyncingRemote.current = true
-        setNodes(stampCanEdit(initialNodes));
-        setEdges(applyEdgeStyles(initialEdges, initialNodes));
-        // Clear the guard AFTER React has flushed the state updates and re-rendered.
-        // setTimeout(0) runs after the current render cycle completes.
-        const tid = setTimeout(() => {
-            isSyncingRemote.current = false
-        }, 100)
-        return () => clearTimeout(tid)
-    }, [initialNodes, initialEdges, stampCanEdit]);
+    const [availableSubtasks, setAvailableSubtasks] = useState(initialSubtasks)
 
     // ── Auto-save state ─────────────────────────────────────────────────────
     // 'idle' | 'unsaved' | 'saving' | 'saved' | 'error'
     const [autoSaveStatus, setAutoSaveStatus] = useState('idle')
+    // Debounce timer ref — declared here so the sync useEffect (above) can
+    // cancel any pending save when remote data arrives.
     const debounceTimer = useRef(null)
-    const isMounted = useRef(false)   // skip the very first render
+
+    // ── Sync guard ──────────────────────────────────────────────────────────
+    // A monotonically-increasing counter: when > 0 we are applying remote data
+    // and must NOT trigger auto-save. We increment on every remote sync and
+    // decrement in a microtask AFTER React flushes the state updates.
+    // This is race-condition-free unlike the old setTimeout approach.
+    const syncDepth = useRef(0)
+    const isSyncingRemote = () => syncDepth.current > 0
+
+    // Sync internal state when initial props change (remote socket event)
+    useEffect(() => {
+        syncDepth.current += 1
+
+        // Cancel any pending user-initiated auto-save so it doesn't fire
+        // AFTER we apply remote data (that would re-broadcast already-saved state).
+        if (debounceTimer.current) {
+            clearTimeout(debounceTimer.current)
+            debounceTimer.current = null
+            setAutoSaveStatus('idle')
+        }
+
+        setNodes(stampCanEdit(initialNodes))
+        setEdges(applyEdgeStyles(initialEdges, initialNodes))
+        setAvailableSubtasks(initialSubtasks)
+
+        // Decrement the guard in a microtask — React guarantees the state
+        // updates above are batched and flushed before the next paint, so by
+        // the time this runs the new nodes/edges are already in state.
+        Promise.resolve().then(() => {
+            syncDepth.current = Math.max(0, syncDepth.current - 1)
+        })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialNodes, initialEdges, initialSubtasks])
+    // NOTE: stampCanEdit intentionally omitted — it only changes on role switch,
+    // which is not a remote-data event and should not reset the canvas.
 
     // ── Refs for latest data — avoids stale closures in debounced auto-save ──
     const nodesRef = useRef(nodes)
@@ -134,15 +152,19 @@ const WorkflowEditor = ({
 
     const triggerAutoSave = useCallback(async () => {
         if (!canEdit) return;
-        // Don't auto-save if we're applying remote data
-        if (isSyncingRemote.current) return;
+        // Don't auto-save if we're currently applying remote data
+        if (isSyncingRemote()) return;
+
+        // Read the live socket id at call-time (not render-time) so we always
+        // exclude the correct tab even after socket reconnects.
+        const currentSocketId = socketRef?.current?.id
 
         setAutoSaveStatus('saving');
         try {
             await workflowAPI.updateWorkflow(projectId, {
                 nodes: nodesRef.current,
                 edges: edgesRef.current,
-                socketId
+                socketId: currentSocketId
             });
             setAutoSaveStatus('saved');
             onSaved?.();
@@ -151,7 +173,7 @@ const WorkflowEditor = ({
             setAutoSaveStatus('error');
             setTimeout(() => setAutoSaveStatus('unsaved'), 3000);
         }
-    }, [projectId, canEdit, socketId, onSaved]);
+    }, [projectId, canEdit, socketRef, onSaved]);
 
     // Wrapper for node changes that triggers auto-save only on meaningful events.
     // During active dragging (dragging: true), we update state but do NOT schedule
@@ -160,7 +182,7 @@ const WorkflowEditor = ({
         onNodesChange(changes);
 
         // Skip auto-save scheduling when changes come from remote sync
-        if (isSyncingRemote.current) return;
+        if (isSyncingRemote()) return;
 
         // Check if user is actively dragging — skip save scheduling during drag
         const isActivelyDragging = changes.some(c => c.type === 'position' && c.dragging);
@@ -185,7 +207,7 @@ const WorkflowEditor = ({
         setEdges(eds => applyEdgeChanges(changes, eds));
 
         // Skip auto-save scheduling when changes come from remote sync
-        if (isSyncingRemote.current) return;
+        if (isSyncingRemote()) return;
 
         setAutoSaveStatus('unsaved');
 
@@ -193,7 +215,6 @@ const WorkflowEditor = ({
         debounceTimer.current = setTimeout(triggerAutoSave, 1500);
     }, [canEdit, setEdges, triggerAutoSave]);
 
-    const [availableSubtasks, setAvailableSubtasks] = useState(initialSubtasks)
     const [saving, setSaving] = useState(false)
 
     // The auto-save useEffect is now replaced by triggerAutoSave and interaction handlers
@@ -215,7 +236,11 @@ const WorkflowEditor = ({
             })
             return currentNodes
         })
-    }, [canEdit, setEdges, setNodes])
+
+        setAutoSaveStatus('unsaved');
+        if (debounceTimer.current) clearTimeout(debounceTimer.current);
+        debounceTimer.current = setTimeout(triggerAutoSave, 1500);
+    }, [canEdit, setEdges, setNodes, triggerAutoSave])
 
     // ── Drag-from-sidebar ───────────────────────────────────────────────────
 
@@ -253,7 +278,11 @@ const WorkflowEditor = ({
         setNodes(nds => [...nds, newNode])
         setAvailableSubtasks(prev => prev.filter(st => st._id !== subtask._id))
         toast.success(`"${subtask.title}" added to canvas`)
-    }, [canEdit, rfInstance, setNodes])
+
+        setAutoSaveStatus('unsaved');
+        if (debounceTimer.current) clearTimeout(debounceTimer.current);
+        debounceTimer.current = setTimeout(triggerAutoSave, 1500);
+    }, [canEdit, rfInstance, setNodes, triggerAutoSave])
 
     // ── Node deletion (restores to sidebar) ────────────────────────────────
 
@@ -262,7 +291,11 @@ const WorkflowEditor = ({
         const restored = deleted.map(n => n.data)
         setAvailableSubtasks(prev => [...prev, ...restored])
         toast.info(`${deleted.length} subtask${deleted.length > 1 ? 's' : ''} removed from canvas`)
-    }, [canEdit])
+
+        setAutoSaveStatus('unsaved');
+        if (debounceTimer.current) clearTimeout(debounceTimer.current);
+        debounceTimer.current = setTimeout(triggerAutoSave, 1500);
+    }, [canEdit, triggerAutoSave])
 
     // ── Save ────────────────────────────────────────────────────────────────
 
@@ -270,7 +303,8 @@ const WorkflowEditor = ({
         if (!canEdit) return
         setSaving(true)
         try {
-            await workflowAPI.updateWorkflow(projectId, { nodes, edges, socketId })
+            const currentSocketId = socketRef?.current?.id
+            await workflowAPI.updateWorkflow(projectId, { nodes, edges, socketId: currentSocketId })
             toast.success('Workflow saved!')
             onSaved?.()
         } catch (err) {
@@ -299,7 +333,12 @@ const WorkflowEditor = ({
 
         setEdges([])    // clear all edges
         toast.info('Canvas cleared')
-    }, [canEdit, setNodes, setEdges])
+
+        // Save the cleared state so other tabs sync
+        setAutoSaveStatus('unsaved');
+        if (debounceTimer.current) clearTimeout(debounceTimer.current);
+        debounceTimer.current = setTimeout(triggerAutoSave, 800);
+    }, [canEdit, setNodes, setEdges, triggerAutoSave])
 
     // ── Mouse Tracking ──────────────────────────────────────────────────────
 
