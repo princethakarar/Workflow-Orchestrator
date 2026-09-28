@@ -80,6 +80,10 @@ services:
     envVars:
       - key: VITE_API_BASE_URL
         value: https://workflow-orchestrator-backend.onrender.com
+      - key: VITE_PUSHER_KEY
+        sync: false
+      - key: VITE_PUSHER_CLUSTER
+        value: ap2
     routes:
       - type: rewrite
         source: /*

@@ -4,7 +4,8 @@ import { Task } from "../models/Task.js"
 import { asyncHandler } from "../utils/async-handler.js"
 import { ApiError } from "../utils/api-error.js"
 import { ApiResponse } from "../utils/api-response.js"
-import { emitToProject } from "../utils/socket.js"
+import { emitToProject } from "../utils/pusher.js"
+
 
 /**
  * Derive subtask status from subtask data

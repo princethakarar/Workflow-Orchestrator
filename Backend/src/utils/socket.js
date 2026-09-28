@@ -3,6 +3,9 @@ import http from "http";
 
 let io;
 
+/** Returns the Socket.io server instance (null if not yet initialized). */
+export const getIO = () => io ?? null;
+
 /**
  * Initializes the Socket.io server and attaches it to the HTTP server.
  * @param {http.Server} server - The Node HTTP server instance.
