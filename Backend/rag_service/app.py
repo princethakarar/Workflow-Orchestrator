@@ -52,6 +52,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_chroma import Chroma
 from langchain_groq import ChatGroq
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -283,16 +284,10 @@ CHROMA_CLIENT, CHROMA_MODE, CHROMA_INIT_ERROR = init_chroma()
 log.info("ChromaDB client initialized ✓ (mode=%s)", CHROMA_MODE)
 
 # ── Tuning Constants ──────────────────────────────────────────────────────────
-TOP_K          = 10
-MIN_CHUNK_CHARS = 300
-MAX_CHUNK_CHARS = 1800
-OVERLAP_WORDS   = 40
-
-# Separator inserted between a chunk's overlap prefix and its own body.
-OVERLAP_SEP = " … "
+TOP_K = 10
 
 # ── LLM Constants ─────────────────────────────────────────────────────────────
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
 # Ceiling on generated tokens. Measured from the 35 real completions logged in
 # Backend/datasets/fine_tuning_dataset.jsonl: p50 ≈ 1,935 tokens, p90 ≈ 2,014,
@@ -318,37 +313,8 @@ GROQ_MAX_RETRIES = 0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Chunking — paragraph + sentence boundary aware
+# Text Extraction
 # ══════════════════════════════════════════════════════════════════════════════
-
-def _split_sentences(text: str) -> list[str]:
-    """Naïve but fast sentence splitter (avoids heavy NLTK dependency)."""
-    parts = re.split(r'(?<=[.!?])\s+(?=[A-Z\d"\'])', text)
-    return [p.strip() for p in parts if p.strip()]
-
-
-def _hard_split(text: str, max_len: int) -> list[str]:
-    """Last-resort split for text with no usable sentence boundary.
-
-    Bullet lists, tables and headings routinely contain no ".!?" followed by a
-    capital, so the sentence splitter returns them as one giant unit. Previously
-    such text escaped the size check entirely; now it is cut on the nearest word
-    boundary, falling back to a raw character slice if a single "word" is itself
-    longer than the budget.
-    """
-    pieces: list[str] = []
-    remaining = text.strip()
-    while len(remaining) > max_len:
-        window = remaining[:max_len]
-        cut = window.rfind(" ")
-        if cut < max_len // 2:      # no sensible word boundary in range
-            cut = max_len
-        pieces.append(remaining[:cut].strip())
-        remaining = remaining[cut:].strip()
-    if remaining:
-        pieces.append(remaining)
-    return [p for p in pieces if p]
-
 
 def extract_text_with_pages(pdf_bytes: bytes) -> list[dict]:
     """
@@ -370,230 +336,38 @@ def extract_text_with_pages(pdf_bytes: bytes) -> list[dict]:
     return pages
 
 
-def _raw_blocks(pages: list[dict]) -> list[dict]:
-    """Collect paragraph blocks with page provenance and running char offsets."""
-    blocks: list[dict] = []
-    char_cursor = 0
-    for page_info in pages:
-        page_num = page_info["page"]
-        for para in re.split(r"\n{2,}", page_info["text"]):
-            para = para.strip()
-            if not para:
-                continue
-            blocks.append({
-                "page": page_num,
-                "text": para,
-                "char_start": char_cursor,
-            })
-            char_cursor += len(para) + 2
-    return blocks
+# ══════════════════════════════════════════════════════════════════════════════
+# Chunking — RecursiveCharacterTextSplitter
+# ══════════════════════════════════════════════════════════════════════════════
 
-
-def _packable_units(blocks: list[dict], max_len: int) -> list[dict]:
-    """Break blocks down until every unit fits the budget.
-
-    Whole paragraph if it fits → else sentences → else hard character slices.
-    A unit is never larger than `max_len`, which is what makes the final
-    "no chunk exceeds MAX_CHUNK_CHARS" guarantee reachable.
-    """
-    units: list[dict] = []
-    for block in blocks:
-        if len(block["text"]) <= max_len:
-            units.append(dict(block))
-            continue
-
-        cursor = block["char_start"]
-        for sent in _split_sentences(block["text"]):
-            parts = [sent] if len(sent) <= max_len else _hard_split(sent, max_len)
-            for part in parts:
-                units.append({"page": block["page"], "text": part, "char_start": cursor})
-                cursor += len(part) + 1
-    return units
-
-
-def _overlap_prefix(body: str, overlap_words: int) -> str:
-    """The trailing `overlap_words` words of a chunk body."""
-    if overlap_words <= 0:
-        return ""
-    words = body.split()
-    if not words:
-        return ""
-    return " ".join(words[-overlap_words:])
-
-
-def _pack(units: list[dict], max_chars: int, overlap_words: int) -> list[dict]:
-    """Greedily pack units into chunk bodies, reserving room for the overlap.
-
-    This is the fix for overlap being applied *after* the size check: the budget
-    for chunk N is reduced by the exact length of the overlap prefix that chunk
-    N-1 will contribute, so body + overlap stays inside max_chars instead of
-    overshooting it by ~250-300 chars on every non-first chunk.
-    """
-    chunks: list[dict] = []
-    buf, buf_page, buf_start = "", 1, 0
-
-    def reserved() -> int:
-        if not chunks:
-            return 0
-        prefix = _overlap_prefix(chunks[-1]["text"], overlap_words)
-        return len(prefix) + len(OVERLAP_SEP) if prefix else 0
-
-    def flush(text, page, start):
-        if text.strip():
-            chunks.append({
-                "page": page,
-                "text": text.strip(),
-                "char_start": start,
-                "char_end": start + len(text),
-            })
-
-    for unit in units:
-        budget = max(max_chars - reserved(), 1)
-
-        if not buf:
-            buf, buf_page, buf_start = unit["text"], unit["page"], unit["char_start"]
-        elif len(buf) + 2 + len(unit["text"]) <= budget:
-            buf += "\n\n" + unit["text"]
-        else:
-            flush(buf, buf_page, buf_start)
-            buf, buf_page, buf_start = unit["text"], unit["page"], unit["char_start"]
-
-    flush(buf, buf_page, buf_start)
-    return chunks
-
-
-def _join_chunks(first: dict, second: dict) -> dict:
-    return {
-        "page": first["page"],
-        "text": first["text"] + "\n\n" + second["text"],
-        "char_start": first["char_start"],
-        "char_end": second["char_end"],
-    }
-
-
-def _merge_small(chunks: list[dict], min_chars: int, max_chars: int) -> list[dict]:
-    """Merge sub-min_chars chunks into a neighbour instead of discarding them.
-
-    The old behaviour deleted every block below MIN_CHUNK_CHARS outright, so
-    headings, table rows and one-line bullets never reached the index at all.
-    Content is now only lost when a short chunk has no neighbour to attach to —
-    i.e. it is the sole chunk in the document.
-    """
-    out: list[dict] = []
-    pending: dict | None = None
-    dropped: list[int] = []
-
-    for chunk in chunks:
-        current = chunk
-
-        if pending is not None:
-            if len(pending["text"]) + 2 + len(current["text"]) <= max_chars:
-                current = _join_chunks(pending, current)
-            else:
-                out.append(pending)     # doesn't fit anywhere — keep, never drop
-            pending = None
-
-        if len(current["text"]) >= min_chars:
-            out.append(current)
-        elif out and len(out[-1]["text"]) + 2 + len(current["text"]) <= max_chars:
-            out[-1] = _join_chunks(out[-1], current)
-        else:
-            pending = current           # try the next chunk instead
-
-    if pending is not None:
-        if out and len(out[-1]["text"]) + 2 + len(pending["text"]) <= max_chars:
-            out[-1] = _join_chunks(out[-1], pending)
-        elif out:
-            out.append(pending)         # has neighbours, just doesn't fit
-        else:
-            dropped.append(len(pending["text"]))
-
-    if dropped:
-        log.warning(
-            "Chunk discard: dropped %d block(s) below MIN_CHUNK_CHARS=%d with no "
-            "neighbour to merge into; sizes=%s", len(dropped), min_chars, dropped
-        )
-    else:
-        log.info("Chunk merge: no content dropped (MIN_CHUNK_CHARS=%d)", min_chars)
-
-    return out
-
-
-def _apply_overlap(chunks: list[dict], overlap_words: int, max_chars: int) -> list[dict]:
-    """Prepend each chunk with the tail of the previous chunk's BODY.
-
-    Taking the prefix from the previous *body* rather than its already-prefixed
-    final text stops overlap compounding down the document, and keeps the length
-    consistent with what _pack() reserved. Any residual overshoot is trimmed a
-    word at a time so max_chars is a hard ceiling.
-    """
-    final: list[dict] = []
-    for i, chunk in enumerate(chunks):
-        text = chunk["text"]
-
-        if i > 0:
-            prefix = _overlap_prefix(chunks[i - 1]["text"], overlap_words)
-            if prefix and not text.startswith(prefix[:30]):
-                words = prefix.split()
-                while words and len(" ".join(words)) + len(OVERLAP_SEP) + len(text) > max_chars:
-                    words.pop(0)
-                if words:
-                    text = " ".join(words) + OVERLAP_SEP + text
-
-        final.append({
-            "chunk_id"  : i,
-            "page_hint" : chunk["page"],
-            "char_start": chunk["char_start"],
-            "char_end"  : chunk["char_end"],
-            "word_count": len(text.split()),
-            "text"      : text,
-        })
-    return final
-
-
-def chunk_text_smart(
-    pages: list[dict],
-    min_chars: int = MIN_CHUNK_CHARS,
-    max_chars: int = MAX_CHUNK_CHARS,
-    overlap_words: int = OVERLAP_WORDS,
-) -> list[dict]:
-    """
-    Paragraph-aware, sentence-boundary chunking.
-    Returns a list of dicts:
-      {
-        "text"      : str,
-        "chunk_id"  : int,
-        "page_hint" : int,
-        "char_start": int,
-        "char_end"  : int,
-        "word_count": int,
-      }
-    """
-    units  = _packable_units(_raw_blocks(pages), max_chars)
-    packed = _pack(units, max_chars, overlap_words)
-    merged = _merge_small(packed, min_chars, max_chars)
-    return _apply_overlap(merged, overlap_words, max_chars)
+# Standard LangChain recursive splitter: tries to split on paragraph breaks,
+# then newlines, then spaces, then individual characters — in that order —
+# so chunks respect natural text boundaries as much as possible.
+TEXT_SPLITTER = RecursiveCharacterTextSplitter(
+    chunk_size=500,
+    chunk_overlap=100,
+    length_function=len,
+)
 
 
 def documents_from_pages(pages: list[dict]) -> list[Document]:
-    """Chunk → LangChain Documents, preserving the per-chunk metadata.
+    """Split PDF text into LangChain Documents using RecursiveCharacterTextSplitter.
 
-    Deliberately NOT a TextSplitter subclass: split_text(str) -> list[str] cannot
-    carry page_hint / char offsets / word_count, which the /rag response and the
-    stored vectors both depend on.
+    The full document text is joined and split with chunk_size=500,
+    chunk_overlap=100. Each resulting chunk is wrapped in a Document with
+    a minimal metadata dict (chunk_id and word_count).
     """
+    full_text = "\n\n".join(p["text"] for p in pages)
+    raw_chunks = TEXT_SPLITTER.split_text(full_text)
     return [
         Document(
-            page_content=chunk["text"],
+            page_content=chunk,
             metadata={
-                "chunk_id"  : chunk["chunk_id"],
-                "page_hint" : chunk["page_hint"],
-                "char_start": chunk["char_start"],
-                "char_end"  : chunk["char_end"],
-                "word_count": chunk["word_count"],
+                "chunk_id" : i,
+                "word_count": len(chunk.split()),
             },
         )
-        for chunk in chunk_text_smart(pages)
+        for i, chunk in enumerate(raw_chunks)
     ]
 
 
@@ -874,7 +648,7 @@ def rag_endpoint():
             }), 422
 
         documents = documents_from_pages(pages)
-        log.info("Created %d smart chunks", len(documents))
+        log.info("Created %d chunks (chunk_size=500, chunk_overlap=100)", len(documents))
         if not documents:
             return jsonify({"error": "Chunking produced no output"}), 422
 

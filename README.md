@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/Python_RAG-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python Version" />
   <img src="https://img.shields.io/badge/LangChain-LCEL-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white" alt="LangChain" />
   <img src="https://img.shields.io/badge/ChromaDB-Vector_Store-FF6F61?style=for-the-badge&logo=databricks&logoColor=white" alt="ChromaDB" />
-  <img src="https://img.shields.io/badge/Groq_LLM-Llama_3.3_70B-F3A530?style=for-the-badge&logo=meta&logoColor=white" alt="Groq" />
+  <img src="https://img.shields.io/badge/Groq_LLM-GPT_OSS_120B-F3A530?style=for-the-badge&logo=openai&logoColor=white" alt="Groq" />
 <p align="center">
   <img src="./screenshots/landing.png" alt="Workflow Orchestrator Landing Page" width="100%" style="border-radius: 8px; border: 1px solid #30363d;" />
 </p>
@@ -92,7 +92,7 @@ sequenceDiagram
     participant FE as Frontend App (React Flow)
     participant BE as Backend Server (Express)
     participant RAG as RAG Service (Flask + LangChain + ChromaDB)
-    participant Groq as AI Service (Groq Llama 3.3)
+    participant Groq as AI Service (GPT OSS 120B)
     participant DB as Database (MongoDB)
 
     Manager->>FE: Upload Project Requirements Document (PDF)
@@ -103,8 +103,8 @@ sequenceDiagram
     Note over BE: Builds TEAM_CONTEXT string.<br/>Mongo access stays in Node — Python never touches the database.
     BE->>RAG: POST /rag (PDF Buffer + Query + TEAM_CONTEXT)<br/>header: X-RAG-Secret
     activate RAG
-    Note over RAG: PyMuPDF extracts text → paragraph/sentence chunker →<br/>LangChain Documents → ONNX MiniLM embeddings (all-MiniLM-L6-v2) →<br/>Chroma collection per document (cosine) → top-k similarity retrieval.
-    RAG->>Groq: LCEL chain (prompt → ChatGroq), Llama 3.3 70B, JSON mode
+    Note over RAG: PyMuPDF extracts text → RecursiveCharacterTextSplitter (chunk_size=500) →<br/>LangChain Documents → ONNX MiniLM embeddings (all-MiniLM-L6-v2) →<br/>Chroma collection per document (cosine) → top-k similarity retrieval.
+    RAG->>Groq: LCEL chain (prompt → ChatGroq), GPT OSS 120B, JSON mode
     activate Groq
     Groq-->>RAG: Return Structured JSON Plan
     deactivate Groq
@@ -135,8 +135,8 @@ sequenceDiagram
 ### 📄 AI-Driven Architecture Analysis (RAG on LangChain)
 *   **LangChain Pipeline**: The Python microservice runs the full retrieval-and-generation chain on LangChain — a custom ONNX-backed `Embeddings` implementation, `langchain-chroma` for the vector store, and an LCEL chain (`prompt | ChatGroq`) for generation. Deliberately *not* a canned `RetrievalQA` chain, whose default prompt would silently override the hand-tuned rules block.
 *   **Local Vector Embeddings**: `all-MiniLM-L6-v2` (384-dim) executed on **ONNX Runtime**, exposed to LangChain through a small `Embeddings` subclass, and indexed into one local `ChromaDB` collection per document, keyed by SHA-256 of the PDF bytes so re-uploading the same file skips re-embedding entirely. Embedding is batched so peak memory stays flat regardless of document length.
-*   **Content-Aware Chunking**: A custom paragraph- and sentence-boundary chunker (not a generic character splitter) emits LangChain `Document`s carrying page and character-offset metadata, with overlap budgeted *before* the size ceiling so no chunk overruns it.
-*   **Dynamic LLM Generation**: `ChatGroq` with Llama 3.3 70B in JSON mode produces high-fidelity JSON complete with module definitions, estimated complexity, required specializations, and priority hierarchies. Express validates the schema and persists the result.
+*   **Content-Aware Chunking**: Utilizes LangChain's `RecursiveCharacterTextSplitter` (chunk_size=500, overlap=100) to parse text based on hierarchical natural text boundaries (paragraphs, newlines, spaces). Each chunk is wrapped in a LangChain `Document` containing metadata.
+*   **Dynamic LLM Generation**: `ChatGroq` with GPT OSS 120B in JSON mode produces high-fidelity JSON complete with module definitions, estimated complexity, required specializations, and priority hierarchies. Express validates the schema and persists the result.
 *   **Regression Baseline**: `rag_service/validation/golden_chunks_v1.json` freezes the pre-LangChain chunk text and embedding vectors, so any future change to chunking or the embedding model can be diffed against a known-good reference rather than eyeballed.
 
 ### 🔐 Bidirectional GitHub Synchronization
@@ -165,7 +165,7 @@ The application is split into three decoupled services cooperating in real-time:
 *   Owns everything that needs MongoDB — including the team-availability context injected into the AI prompt — and validates the JSON plan that comes back before persisting it.
 
 ### 3. The RAG Semantic Parser (Python 3.11, Flask & LangChain)
-*   Extracts text via PyMuPDF, chunks it on paragraph and sentence boundaries, and wraps the result in LangChain `Document`s with page and character-offset metadata.
+*   Extracts text via PyMuPDF, chunks it using LangChain's `RecursiveCharacterTextSplitter`, and wraps the result in LangChain `Document`s with chunk and word-count metadata.
 *   Embeds on CPU through ONNX Runtime (no torch) and indexes into a per-document `langchain-chroma` collection created with explicit cosine distance.
 *   Runs retrieval with a request-scoped `k` (clamped to the collection size), then generates the task plan through an LCEL chain and returns both the retrieved context and the raw completion to Express.
 *   Served by **gunicorn** in production; the Flask dev server is local-development only.
@@ -192,8 +192,7 @@ To avoid merge conflicts on the visual canvas:
 ![LangChain](https://img.shields.io/badge/LangChain-LCEL-1C3C3C?style=flat-square&logo=langchain&logoColor=white)
 ![ONNX Runtime](https://img.shields.io/badge/ONNX_Runtime-CPU-005CED?style=flat-square&logo=onnx&logoColor=white)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Store-FF6F61?style=flat-square&logo=databricks&logoColor=white)
-![Groq](https://img.shields.io/badge/Groq-Llama_3.3_70B-F3A530?style=flat-square&logo=meta&logoColor=white)
-![Gunicorn](https://img.shields.io/badge/Gunicorn-WSGI-499848?style=flat-square&logo=gunicorn&logoColor=white)
+![Groq](https://img.shields.io/badge/Groq-GPT_OSS_120B-F3A530?style=flat-square&logo=openai&logoColor=white)
 
 **Pinned LangChain stack** (`Backend/rag_service/requirements.txt`):
 
@@ -204,22 +203,7 @@ To avoid merge conflicts on the visual canvas:
 | `langchain-groq` | `1.1.3` | `ChatGroq` chat model |
 | `chromadb` | `1.5.9` | Vector store **and** the ONNX MiniLM embedding runtime |
 
-> ⚠️ **There is no `torch` and no `sentence-transformers` here, on purpose.** The Render free
-> instance is capped at **512 MB RSS** and the torch-based build peaked at **559 MB** — an
-> instant OOM. Measured contributions were torch import 171 MB, MiniLM weights 124 MB and a
-> 69 MB inference spike. Embeddings now run on **ONNX Runtime**, which already ships as a
-> `chromadb` dependency, using the same `all-MiniLM-L6-v2` model. Peak is now ~403 MB even for
-> a 400-chunk document. `langchain-huggingface` went with them — it exists only to wrap
-> `sentence-transformers` — and is replaced by a ~20-line `Embeddings` subclass in `app.py`.
->
-> Equivalence is verified, not assumed: **cosine similarity 1.000000** against the frozen torch
-> vectors in `validation/golden_chunks_v1.json`. The ONNX function L2-normalises its output
-> where torch did not, but cosine distance is scale-invariant and collections are created with
-> `hnsw:space=cosine`, so retrieval ordering is unchanged.
->
-> The bare `langchain` umbrella package is also intentionally **not** installed: an LCEL chain
-> only needs `langchain-core`, and the free-tier instance cannot spare the extra import weight.
-
+<!-- /
 ---
 
 ## 📂 Folder Structure
@@ -304,7 +288,7 @@ Create `Backend/rag_service/.env` (untracked, and excluded from the Docker image
 
 ```dotenv
 GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxx
-GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_MODEL=openai/gpt-oss-120b
 
 # Must match RAG_SHARED_SECRET in Backend/.env
 RAG_SHARED_SECRET=your_shared_secret
@@ -375,8 +359,9 @@ Create a `.env` file in the `Backend` directory containing the following:
 | `ACCESS_TOKEN_EXPIRY` | JWT Security | `1d` |
 | `REFRESH_TOKEN_SECRET` | JWT Security | `64_char_random_hex_string` |
 | `REFRESH_TOKEN_EXPIRY` | JWT Security | `10d` |
-| `RESEND_API_KEY` | Mail Notification | `re_xxxxxxxxx` |
-| `MAIL_FROM_ADDRESS` | Mail Notification | `onboarding@resend.dev` |
+| `BREVO_API_KEY` | Mail Notification | `your_brevo_api_key_here` |
+| `BREVO_SENDER_EMAIL` | Mail Notification | `noreply@yourdomain.com` |
+| `BREVO_SENDER_NAME` | Mail Notification | `Workflow Orchestrator` |
 | `FRONTEND_URL` | Application Routing | `http://localhost:5173` |
 | `SERVER_URL` | Application Routing | `http://localhost:8000` |
 | `RAG_SERVICE_URL` | AI Service Connector (base URL or `…/rag` — both accepted) | `http://127.0.0.1:5001/rag` |
@@ -391,7 +376,7 @@ And a second `.env` in `Backend/rag_service/` for the Python service:
 | Variable Name | Purpose / Category | Example Value |
 | :--- | :--- | :--- |
 | `GROQ_API_KEY` | Groq LLM Key — **required**, generation runs here now | `gsk_xxxxxxxxxxxxxxxxxxxxxxxx` |
-| `GROQ_MODEL` | Model override (defaults to Llama 3.3 70B) | `llama-3.3-70b-versatile` |
+| `GROQ_MODEL` | Model override (defaults to GPT OSS 120B) | `openai/gpt-oss-120b` |
 | `RAG_SHARED_SECRET` | Must match the value in `Backend/.env` | `43_char_random_url_safe_string` |
 | `RAG_ALLOWED_ORIGINS` | Optional browser CORS allow-list; empty = server-to-server only | *(leave empty)* |
 

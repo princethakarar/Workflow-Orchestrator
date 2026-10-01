@@ -35,6 +35,7 @@ gunicorn
 langchain-core==1.5.3
 langchain-chroma==1.1.0
 langchain-groq==1.1.3
+langchain-text-splitters
 
 # Local-dev config loading for the RAG service (Render sets env vars directly).
 python-dotenv
